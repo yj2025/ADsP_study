@@ -1,0 +1,1 @@
+{"name":"adsp-study-room","version":"1.2.0","private":true,"scripts":{"start":"node server.cjs","test":"node test.cjs && node content.test.cjs && node auth.test.cjs","content:import":"node import-content.cjs"},"engines":{"node":">=24"}}

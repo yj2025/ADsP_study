@@ -1,0 +1,31 @@
+const vm=require('node:vm');
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const source=fs.readFileSync('dist/app.js','utf8');
+const memory={};
+function boot(fail=false){const elements={};const handlers={};const c={console,Date,JSON,Number,Math,Set,Object,Array,location:{hash:'#home'},localStorage:{getItem:k=>memory[k]??null,setItem:(k,v)=>{if(fail)throw Error('quota');memory[k]=v;}},confirm:()=>true,document:{getElementById:id=>elements[id]??=( {innerHTML:'',textContent:'',addEventListener:(type,fn)=>handlers[id+type]=fn,focus:()=>{}}),querySelectorAll:()=>[]},window:{addEventListener:()=>{},scrollTo:()=>{}}};vm.createContext(c);vm.runInContext(source,c);c.seed=JSON.parse(fs.readFileSync('content/seed.json','utf8'));vm.runInContext('installContent(seed)',c);return {run:s=>vm.runInContext(s,c),click:dataset=>handlers.mainclick({target:{closest:()=>({dataset,disabled:false})}}),elements};}
+let app=boot();
+assert.equal(app.run('progress()'),0);
+for(let i=0;i<3;i++)app.click({action:'complete'});
+assert.equal(app.run('state.completed.length'),3);
+for(let i=0;i<6;i++){app.run(`state.quizIndex=${i}`);app.click({choice:String(i===0?0:app.run(`questions[${i}].answer`))});app.click({action:'submit'});}
+assert.equal(app.run('answered()'),6);assert.equal(app.run('correct()'),5);assert.equal(app.run('pending().length'),1);assert.equal(app.run('progress()'),90);
+app=boot();assert.equal(app.run('state.completed.length'),3);assert.equal(app.run('answered()'),6);assert.equal(app.run('pending()[0]'),'q1');
+app.click({review:'q1'});app.click({choice:'0'});app.click({action:'review-submit'});assert.equal(app.run('pending().length'),1);
+app.click({action:'review-list'});app.click({review:'q1'});app.click({choice:'2'});app.click({action:'review-submit'});
+assert.equal(app.run('pending().length'),0);assert.equal(app.run('progress()'),100);assert.equal(app.run('correct()'),5);
+app=boot();assert.equal(app.run('progress()'),100);app.run('location.hash="#review";render()');assert.match(app.elements.main.innerHTML,/복습 완료/);
+app=boot(true);app.run('persist()');assert.match(app.elements['save-status'].textContent,/저장 불가/);
+memory['adsp-study-v1']='broken';app=boot();assert.equal(app.run('progress()'),0);
+console.log('PASS: concept completion, six answers, wrong-answer retry, persistence, progress, storage failure, malformed data');
+app.run('state=fresh();');
+app.run('state.completed=[0,2];state.lesson=2;state.quizIndex=4;state.answers={q1:2};persist();');
+app.run('installContent({lessons:[...seed.lessons,{id:"new-lesson",title:"추가 개념",body:"설명"}],questions:[...seed.questions,{id:"new-question",lesson:3,text:"추가 문제",options:["a","b","c","d"],answer:0,explanation:"해설"}]})');
+assert.equal(app.run('state.completed.length'),2);assert.equal(app.run('state.answers.q1'),2);assert.equal(app.run('lessons.length'),4);assert.equal(app.run('questions.length'),7);
+assert.match(app.run('home()'),/7개의 문제/);assert.match(app.run('home()'),/2 \/ 4개/);
+app.run('state.lesson=3;');assert.match(app.run('learn()'),/추가 개념/);
+app.run('state.quizIndex=6;');assert.match(app.run('quiz()'),/추가 문제/);
+app.run('state=fresh();state.completed=[0,1,2,3];state.answers=Object.fromEntries(questions.map(q=>[q.id,q.answer]));');assert.equal(app.run('progress()'),100);
+app.run('state.completed=[0,2];state.lesson=2;state.quizIndex=4;const storedSnapshot=progressSnapshot();lessons=[lessons[2],lessons[1],lessons[0],lessons[3]];state=sanitize(storedSnapshot);');
+assert.equal(app.run('state.lesson'),0);assert.equal(app.run('lessons[state.completed[0]].id'),'l1');assert.equal(app.run('lessons[state.completed[1]].id'),'l3');assert.equal(app.run('questions[state.quizIndex].id'),'q5');
+console.log('PASS: expanded content counts, new lessons/questions, legacy progress preservation, ID-based snapshots');

@@ -1,0 +1,4 @@
+type,id,title,body,lesson_id,text,option1,option2,option3,option4,answer,explanation,source_url,license
+lesson,data-metadata,메타데이터의 기초,"메타데이터는 데이터를 설명하는 데이터입니다.
+예: 열 이름, 자료형, 데이터 생성 시각 등입니다.",,,,,,,,,,자체 작성 예상 학습 콘텐츠
+question,metadata-q1,,,data-metadata,메타데이터의 예로 가장 적절한 것은?,데이터 열의 자료형 설명,고객의 실제 구매 금액,센서의 실제 측정값,개별 상품의 판매 수량,1,"열의 자료형은 데이터 자체의 구조와 의미를 설명하는 메타데이터입니다. 구매 금액, 측정값, 판매 수량은 이 문제에서 관찰 대상인 실제 데이터입니다.",,자체 작성 예상 문제
