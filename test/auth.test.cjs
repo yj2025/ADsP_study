@@ -25,6 +25,30 @@ async function signup(data){
   return post('/api/login',data);
 }
 try{
+const manifestResponse=await fetch(base+'/manifest.webmanifest');
+assert.match(manifestResponse.headers.get('content-type'),/^application\/manifest\+json/);
+const manifest=await manifestResponse.json();
+assert.equal(manifest.start_url,'/');
+for(const {src,sizes} of manifest.icons){
+  const icon=await fetch(base+src);
+  assert.equal(icon.status,200);
+  assert.equal(icon.headers.get('content-type'),'image/png');
+  const bytes=Buffer.from(await icon.arrayBuffer());
+  assert.equal(bytes.readUInt32BE(16)+'x'+bytes.readUInt32BE(20),sizes);
+}
+const assetLinks=()=>request('/.well-known/assetlinks.json');
+delete process.env.ANDROID_PACKAGE_NAME;
+delete process.env.ANDROID_CERT_SHA256;
+assert.equal((await assetLinks()).response.status,404);
+process.env.ANDROID_PACKAGE_NAME='com.example.adsp';
+process.env.ANDROID_CERT_SHA256='invalid';
+assert.equal((await assetLinks()).response.status,404);
+const fingerprint=Array(32).fill('ab').join(':');
+process.env.ANDROID_CERT_SHA256=fingerprint;
+assert.deepEqual((await assetLinks()).body,[{relation:['delegate_permission/common.handle_all_urls'],target:{
+  namespace:'android_app',package_name:'com.example.adsp',sha256_cert_fingerprints:[fingerprint.toUpperCase()]
+}}]);
+console.log('PASS: web manifest, icon assets and Android domain association configuration');
 const initial=await request('/api/content');assert.equal(initial.response.status,200);assert.equal(initial.body.lessons.length,3);assert.equal(initial.body.questions.length,6);
 assert.equal(initial.body.subjects.length,3);assert.equal(initial.body.units.length,4);assert.equal(initial.body.lessons[0].unit_id,'data-information');
 const contentDB=new DatabaseSync(database);const {importContent}=require('../src/content-store.cjs');importContent(contentDB,JSON.parse(require('node:fs').readFileSync('content/example.json','utf8')));contentDB.close();

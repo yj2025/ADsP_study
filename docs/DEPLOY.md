@@ -31,3 +31,11 @@ npm run db -- verify data/restored.sqlite
 운영 Compose에서는 `docker compose exec -T app node scripts/database.cjs backup /data/backups/study-YYYYMMDD.sqlite`를 실행하고 `docker compose cp app:/data/backups/study-YYYYMMDD.sqlite ./study-YYYYMMDD.sqlite`로 별도 저장소에 옮깁니다. 백업에는 계정과 세션 정보가 포함되므로 접근 권한을 제한하세요. DB 볼륨 장애에 대비해 복사본을 별도 위치에 보관하고 정기적으로 복구를 시험합니다.
 
 운영 전환 시에는 새 경로에 복구해 검증한 뒤 서버를 중지하고 `DATABASE_PATH`를 복구본으로 지정해 다시 시작합니다. Compose에서 기존 DB를 이전할 경우 새 볼륨을 사용하는 상태에서 백업 파일을 컨테이너의 읽기 전용 경로에 마운트한 후 `node scripts/database.cjs restore /restore/study.sqlite /data/study.sqlite`를 실행합니다. 파일은 컨테이너의 `node` 사용자가 읽을 수 있어야 합니다. 복구 대상이 비어 있지 않으면 기존 파일을 보존하고 새 경로를 선택하세요.
+
+## Android 앱 연결
+
+1. 공개 HTTPS 배포 후 `/manifest.webmanifest`를 Bubblewrap에 전달해 TWA 프로젝트를 생성합니다. Android 패키지 이름은 이때 확정합니다.
+2. 서버 `.env`에 같은 `ANDROID_PACKAGE_NAME`과 콜론으로 구분된 `ANDROID_CERT_SHA256`을 설정합니다. Play에서 배포한 앱에는 Play Console의 **앱 서명 키 인증서** SHA-256을 사용합니다.
+3. Compose를 다시 적용하고 공개 주소의 `/.well-known/assetlinks.json`이 리다이렉트 없이 HTTP 200과 JSON을 반환하는지 확인합니다. Play 내부 테스트에서 설치한 앱으로 주소 표시줄 없이 시작하는지와 로그인, 진도 저장, 개인정보 처리방침 및 계정 삭제 경로를 확인합니다.
+
+[TWA 공식 가이드](https://developer.chrome.com/docs/android/trusted-web-activity/quick-start)

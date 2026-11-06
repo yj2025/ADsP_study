@@ -57,6 +57,16 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     try {
       const url = new URL(req.url, 'http://localhost');
+      if(url.pathname==='/.well-known/assetlinks.json'&&req.method==='GET'){
+        const packageName=process.env.ANDROID_PACKAGE_NAME;
+        const fingerprint=process.env.ANDROID_CERT_SHA256?.trim().toUpperCase();
+        if(!/^[A-Za-z][\w]*(?:\.[A-Za-z][\w]*)+$/.test(packageName??'')||!/^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(fingerprint??'')){
+          return json(res,404,{error:'Android 앱 연결 설정이 준비되지 않았습니다.'});
+        }
+        return json(res,200,[{relation:['delegate_permission/common.handle_all_urls'],target:{
+          namespace:'android_app',package_name:packageName,sha256_cert_fingerprints:[fingerprint]
+        }}]);
+      }
       if (!url.pathname.startsWith('/api/')) {
         const files = {'/':['index.html','text/html'], '/index.html':['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/auth.js':['auth.js','text/javascript'], '/style.css':['style.css','text/css']};
         files['/auth.css']=['auth.css','text/css'];
@@ -67,9 +77,13 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
         files['/account-delete']=['account-delete.html','text/html'];
         files['/account-pages.js']=['account-pages.js','text/javascript'];
         files['/account-pages.css']=['account-pages.css','text/css'];
+        files['/manifest.webmanifest']=['manifest.webmanifest','application/manifest+json'];
+        files['/icon-192.png']=['icon-192.png','image/png'];
+        files['/icon-512.png']=['icon-512.png','image/png'];
+        files['/icon-maskable-512.png']=['icon-maskable-512.png','image/png'];
         const file = files[url.pathname];
         if (!file || !['GET','HEAD'].includes(req.method)) return json(res,404,{error:'페이지를 찾을 수 없습니다.'});
-        res.writeHead(200, {'Content-Type':file[1]+'; charset=utf-8','Cache-Control':'no-cache'});
+        res.writeHead(200, {'Content-Type':file[1]==='image/png'?file[1]:file[1]+'; charset=utf-8','Cache-Control':'no-cache'});
         return res.end(req.method==='HEAD'?undefined:readFileSync(path.join(__dirname,'..','dist',file[0])));
       }
       if (!['GET','POST','PUT'].includes(req.method)) return json(res,405,{error:'지원하지 않는 요청입니다.'});
