@@ -5,6 +5,7 @@ services:
     environment:
       APP_ORIGIN: https://${SITE_HOST:?Set SITE_HOST to your public hostname}
       COOKIE_SECURE: '1'
+      TRUSTED_PROXY_IP: 172.30.84.2
       MAIL_MODE: ${MAIL_MODE:-disabled}
       MAIL_WEBHOOK_URL: ${MAIL_WEBHOOK_URL:-}
       MAIL_WEBHOOK_TOKEN: ${MAIL_WEBHOOK_TOKEN:-}
@@ -14,6 +15,9 @@ services:
     image: caddy:2
     restart: unless-stopped
     depends_on: [app]
+    networks:
+      default:
+        ipv4_address: 172.30.84.2
     environment:
       SITE_HOST: ${SITE_HOST:?Set SITE_HOST to your public hostname}
     ports:
@@ -27,3 +31,8 @@ volumes:
   study_data:
   caddy_data:
   caddy_config:
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.84.0/24

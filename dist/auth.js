@@ -13,6 +13,7 @@
   document.body.append(dialog);
   const form=dialog.querySelector('form'),errorBox=dialog.querySelector('.auth-error');
   let mode='login',busy=false,queue=Promise.resolve(),syncState='saved',syncError=null,expired=false,unsaved=false,checking=false;
+  let progressBase=null,pendingSave=null,latestSave=null;
   const link=/^#(verify|reset)=([a-f0-9]{64})$/.exec(location.hash);
   if(link)history.replaceState(null,'',location.pathname+location.search);
   const note=dialog.querySelector('.note');
@@ -42,23 +43,37 @@
     },
     status(){const el=document.getElementById('save-status');el.textContent=expired?'세션 만료 · 다시 로그인':syncState==='saving'?'● 계정에 저장 중…':syncState==='error'?'저장 실패 · 아래에서 재시도':'● 계정에 저장됨';},
     save(value){
-      const payload=JSON.stringify(value),userId=auth.user.id;
+      const userId=auth.user.id;
+      latestSave=JSON.parse(JSON.stringify(value));
       if(expired){unsaved=true;return;}
       syncState='saving';syncError=null;auth.status();
       queue=queue.then(async()=>{
         if(auth.user?.id!==userId)return;
         if(expired){unsaved=true;return;}
-        try{await api('/api/progress','PUT',JSON.parse(payload));syncState='saved';syncError=null;document.getElementById('sync-notice')?.remove();}
+        try{
+          while(pendingSave||latestSave){
+            if(!pendingSave){pendingSave={base:progressBase,progress:latestSave};latestSave=null;}
+            await api('/api/progress','PUT',pendingSave);
+            progressBase=pendingSave.progress;pendingSave=null;
+          }
+          syncState='saved';syncError=null;document.getElementById('sync-notice')?.remove();
+        }
         catch(error){syncState='error';syncError=error;if(error.code==='SESSION_EXPIRED'){unsaved=true;auth.expire();}else showSyncError();}
         auth.status();
       });
     }
   };
   function showSyncError(){
-    const existing=document.getElementById('sync-notice');if(existing&&!expired)return;existing?.remove();
+    document.getElementById('sync-notice')?.remove();
     const el=document.createElement('div');el.id='sync-notice';el.className='notice';el.setAttribute('role','alert');
     el.innerHTML=expired?'세션이 만료되었습니다. 같은 계정으로 다시 로그인하면 저장하지 못한 기록을 이어서 저장합니다. <button class="btn secondary" type="button">다시 로그인</button>':'학습 기록을 서버에 저장하지 못했습니다. 이 탭을 닫기 전에 다시 저장해 주세요. <button class="btn secondary" type="button">다시 저장</button>';
-    el.querySelector('button').onclick=()=>{if(expired){switchMode('login');if(auth.user)form.elements.email.value=auth.user.email;if(!dialog.open)dialog.showModal();}else auth.save(progressSnapshot());};header.after(el);
+    if(!expired&&syncError?.code==='PROGRESS_CONFLICT')el.innerHTML='다른 기기에서 같은 학습 기록을 변경했습니다. 이 탭의 변경을 확인한 뒤 서버 기록을 불러올 수 있습니다. <button class="btn secondary" type="button">서버 기록 불러오기</button>';
+    el.querySelector('button').onclick=()=>{
+      if(expired){switchMode('login');if(auth.user)form.elements.email.value=auth.user.email;if(!dialog.open)dialog.showModal();}
+      else if(syncError?.code==='PROGRESS_CONFLICT'){
+        if(confirm('이 탭에서 저장하지 못한 변경을 버리고 서버의 기록을 불러올까요?'))location.reload();
+      }else auth.save(progressSnapshot());
+    };header.after(el);
   }
   function updateAccount(){
     window.ContentAdmin?.update();
@@ -134,6 +149,7 @@
       const result=await api('/api/login','POST',{email,password});account=result.user;
       const saved=await api('/api/progress');
       const recover=restore&&prior?.id===account.id;
+      if(!recover){progressBase=saved.progress;pendingSave=null;latestSave=null;}
       expired=false;unsaved=false;syncError=null;syncState='saved';markSession(true);
       auth.user=account;if(!recover)state=sanitize(saved.progress);clearEphemeral();main.inert=false;document.getElementById('sync-notice')?.remove();updateAccount();redraw();
       let importGuest=false;try{if(localStorage.getItem('adsp-guest-import-email')===account.email){importGuest=true;localStorage.removeItem('adsp-guest-import-email');}}catch{}
@@ -159,7 +175,7 @@
     if(!await window.contentReady)return;
     updateAccount();if(location.protocol==='file:')return;
     main.inert=true;accountButton.disabled=true;
-    try{const result=await api('/api/me');if(result.user){const saved=await api('/api/progress');auth.user=result.user;markSession(true);state=sanitize(saved.progress);clearEphemeral();}auth.ready=true;updateAccount();redraw();main.inert=false;
+    try{const result=await api('/api/me');if(result.user){const saved=await api('/api/progress');progressBase=saved.progress;auth.user=result.user;markSession(true);state=sanitize(saved.progress);clearEphemeral();}auth.ready=true;updateAccount();redraw();main.inert=false;
       if(!result.user&&(result.expired||signedIn()))auth.expire();
       if(link){switchMode(link[1]);if(!dialog.open)dialog.showModal();}}
     catch(error){const notice=document.createElement('div');notice.className='notice';notice.textContent='로그인 상태를 확인하지 못했습니다. 서버 실행 상태를 확인한 뒤 새로고침해 주세요.';header.after(notice);}

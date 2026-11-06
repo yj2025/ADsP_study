@@ -5,17 +5,19 @@ const { randomBytes, scrypt, timingSafeEqual, createHash } = require('node:crypt
 const { promisify } = require('node:util');
 const { mkdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
+const {isIP}=require('node:net');
+const {mergeProgress}=require('./progress-merge.cjs');
 const derive = promisify(scrypt);
 const {setupContent,readContent,importContent}=require('./content-store.cjs');
 const {reviewList,publish}=require('./review-store.cjs');
 const {setupAdmin,prepareUpload,digest}=require('./admin-store.cjs');
 const {setupAccountMail,createMailer,issue,readToken,consume}=require('./account-mail.cjs');
 
-function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'study.sqlite'), tls, secure = Boolean(tls)||process.env.COOKIE_SECURE === '1', origin, sendMail } = {}) {
+function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'study.sqlite'), tls, secure = Boolean(tls)||process.env.COOKIE_SECURE === '1', origin, sendMail, trustedProxy=process.env.TRUSTED_PROXY_IP } = {}) {
   sendMail??=createMailer({database,origin,secure});
   if (database !== ':memory:') mkdirSync(path.dirname(database), { recursive: true });
   const db = new DatabaseSync(database);
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
+  db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS progress (user_id INTEGER PRIMARY KEY REFERENCES users(id), payload TEXT NOT NULL);`);
@@ -78,7 +80,9 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
         return json(res,200,{user:account,...(expired?{expired:true}:{})},expired?{'Set-Cookie':cookie('',0)}:{});
       }
       if (['/api/register','/api/login','/api/email/resend','/api/email/verify','/api/password/request','/api/password/reset'].includes(url.pathname) && req.method==='POST') {
-        const address = req.socket.remoteAddress;
+        const peer=req.socket.remoteAddress?.replace(/^::ffff:/,'');
+        const forwarded=req.headers['x-study-client-ip'];
+        const address=peer===trustedProxy&&typeof forwarded==='string'&&isIP(forwarded)?forwarded.replace(/^::ffff:/,''):peer;
         const now = Date.now();
         for (const [key, entry] of limits) if (entry.until < now) limits.delete(key);
         const entry=limits.get(address)||{count:0,until:now+15*60000};
@@ -184,12 +188,22 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
         if(req.headers['x-study-user']!==String(account.id)) return json(res,409,{error:'다른 탭에서 계정이 변경되었습니다. 새로고침 후 다시 학습해 주세요.'});
         const data=await body(req,1024*1024);
         if(user(req)?.id!==account.id)return json(res,401,{code:'SESSION_EXPIRED',error:'세션이 만료되었습니다. 다시 로그인해 주세요.'});
-        if (!data || data.version!==1 || !Array.isArray(data.completed) || !data.answers || typeof data.answers!=='object' || Array.isArray(data.answers)) return json(res,400,{error:'학습 기록 형식이 올바르지 않습니다.'});
-        db.prepare('INSERT INTO progress VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload').run(account.id,JSON.stringify(data));
+        const wrapped=data&&Object.hasOwn(data,'base');
+        const next=wrapped?data.progress:data;
+        const valid=value=>value?.version===1&&Array.isArray(value.completed)&&value.answers&&typeof value.answers==='object'&&!Array.isArray(value.answers);
+        if(!valid(next)||(wrapped&&data.base!==null&&data.base?.version!==1))return json(res,400,{error:'학습 기록 형식이 올바르지 않습니다.'});
+        db.exec('BEGIN IMMEDIATE');
+        try{
+          const row=db.prepare('SELECT payload FROM progress WHERE user_id=?').get(account.id);
+          if(row&&!wrapped)throw Object.assign(Error('최신 학습 기록을 불러온 뒤 저장해 주세요.'),{status:409,code:'PROGRESS_CONFLICT'});
+          const merged=mergeProgress(wrapped?data.base:null,next,row?JSON.parse(row.payload):null);
+          db.prepare('INSERT INTO progress VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload').run(account.id,JSON.stringify(merged));
+          db.exec('COMMIT');
+        }catch(error){db.exec('ROLLBACK');throw error;}
         return json(res,200,{ok:true});
       }
       return json(res,404,{error:'요청을 찾을 수 없습니다.'});
-    } catch(error) { if(!res.headersSent)json(res,error.status||500,{error:error.status?error.message:'요청을 처리하지 못했습니다. 다시 시도해 주세요.'}); else res.end(); }
+    } catch(error) { if(!res.headersSent)json(res,error.status||500,{error:error.status?error.message:'요청을 처리하지 못했습니다. 다시 시도해 주세요.',...(error.status===409&&error.code?{code:error.code}:{})}); else res.end(); }
   };
   const server=tls?https.createServer(tls,handler):http.createServer(handler);
   server.on('close',()=>db.close());

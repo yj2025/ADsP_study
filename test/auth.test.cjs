@@ -11,7 +11,7 @@ const mail=[];const sendMail=async message=>{mail.push(message);};
 let server=createApp({database,sendMail});
 async function listen(){await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));return `http://127.0.0.1:${server.address().port}`;}
 let base=await listen();
-async function request(route,{method='GET',data,cookie,origin=base,userId}={}){const response=await fetch(base+route,{method,headers:{...(method!=='GET'?{'Content-Type':'application/json',Origin:origin}:{}),...(cookie?{Cookie:cookie}:{}),...(userId?{'X-Study-User':String(userId)}:{})},body:data===undefined?undefined:JSON.stringify(data)});return {response,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
+async function request(route,{method='GET',data,cookie,origin=base,userId,clientIp}={}){const response=await fetch(base+route,{method,headers:{...(method!=='GET'?{'Content-Type':'application/json',Origin:origin}:{}),...(cookie?{Cookie:cookie}:{}),...(userId?{'X-Study-User':String(userId)}:{}),...(clientIp?{'X-Study-Client-IP':clientIp}:{})},body:data===undefined?undefined:JSON.stringify(data)});return {response,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
 const credentials={email:'student@example.test',password:'test-password-123'};
 const mailToken=()=>new URL(mail.at(-1).link).hash.split('=')[1];
 const post=(route,data)=>request(route,{method:'POST',data});
@@ -70,8 +70,31 @@ assert.equal((await request('/api/progress',{cookie:live.cookie})).body.code,'SE
 assert.equal((await post('/api/login',credentials)).response.status,401);
 const recovered=await post('/api/login',replacement);assert.equal(recovered.response.status,200);
 assert.deepEqual((await request('/api/progress',{cookie:recovered.cookie})).body.progress,record);
+const otherDevice=await post('/api/login',replacement);
+assert.equal(otherDevice.response.status,200);
+const save=(device,original,progress)=>request('/api/progress',{method:'PUT',cookie:device.cookie,userId:device.body.user.id,data:{base:original,progress}});
+const firstEdit={...record,completed:[0,1,2],answers:{...record.answers,q2:1}};
+const secondEdit={...record,completed:[0,1,3],answers:{...record.answers,q3:2}};
+const writes=await Promise.all([save(recovered,record,firstEdit),save(otherDevice,record,secondEdit)]);
+assert.deepEqual(writes.map(write=>write.response.status),[200,200]);
+assert.equal((await save(recovered,record,firstEdit)).response.status,200);
+const merged=(await request('/api/progress',{cookie:recovered.cookie})).body.progress;
+assert.deepEqual([...merged.completed].sort(),[0,1,2,3]);
+assert.deepEqual(merged.answers,{q1:2,q2:1,q3:2});
+assert.equal((await save(otherDevice,record,{...record,answers:{...record.answers,q2:3}})).body.code,'PROGRESS_CONFLICT');
+assert.equal((await request('/api/progress',{method:'PUT',cookie:otherDevice.cookie,userId:otherDevice.body.user.id,data:record})).response.status,409);
+assert.deepEqual((await request('/api/progress',{cookie:otherDevice.cookie})).body.progress,merged);
 for(let i=0;i<30;i++)await request('/api/login',{method:'POST',data:{...credentials,password:'wrong-password'}});
 assert.equal((await request('/api/login',{method:'POST',data:credentials})).response.status,429);
+assert.equal((await request('/api/login',{method:'POST',data:replacement,clientIp:'192.0.2.9'})).response.status,429);
+await new Promise(resolve=>server.close(resolve));
+server=createApp({database,sendMail,trustedProxy:'127.0.0.1'});
+base=await listen();
+const throughProxy=(clientIp,data)=>request('/api/login',{method:'POST',clientIp,data});
+for(let i=0;i<30;i++)assert.equal((await throughProxy('192.0.2.1',{})).response.status,400);
+assert.equal((await throughProxy('192.0.2.1',replacement)).response.status,429);
+assert.equal((await throughProxy('192.0.2.2',replacement)).response.status,200);
+console.log('PASS: concurrent progress merge, retry, conflict protection, trusted proxy IP isolation, untrusted header rejection');
 console.log('PASS: email verification, token expiry and replay rejection, password reset and session revocation, progress preservation, account isolation, CSRF, rate limiting');
 }finally{await new Promise(resolve=>server.close(resolve));rmSync(directory,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

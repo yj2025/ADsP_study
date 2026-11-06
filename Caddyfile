@@ -1,4 +1,6 @@
 {$SITE_HOST} {
 	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy app:4173
+	reverse_proxy app:4173 {
+		header_up X-Study-Client-IP {http.request.remote.host}
+	}
 }
