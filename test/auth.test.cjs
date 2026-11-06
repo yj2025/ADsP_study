@@ -95,6 +95,45 @@ for(let i=0;i<30;i++)assert.equal((await throughProxy('192.0.2.1',{})).response.
 assert.equal((await throughProxy('192.0.2.1',replacement)).response.status,429);
 assert.equal((await throughProxy('192.0.2.2',replacement)).response.status,200);
 console.log('PASS: concurrent progress merge, retry, conflict protection, trusted proxy IP isolation, untrusted header rejection');
+for(const [route,heading] of [['/privacy','개인정보 처리방침'],['/account-delete','ADsP 스터디룸 계정 삭제']]){
+  const page=await fetch(base+route);
+  assert.equal(page.status,200);
+  assert.match(page.headers.get('content-type'),/text\/html/);
+  assert.ok((await page.text()).includes(heading));
+}
+const deletionSession=await throughProxy('192.0.2.2',replacement);
+const secondDeletionSession=await throughProxy('192.0.2.3',replacement);
+const deletingId=deletionSession.body.user.id;
+const unaffected=await throughProxy('192.0.2.4',{...credentials,email:'other@example.test'});
+const deletionOptions={method:'POST',cookie:deletionSession.cookie,userId:deletingId,data:{confirmed:true,password:replacement.password}};
+const deleteAccount=options=>request('/api/account/delete',{...deletionOptions,...options});
+assert.equal((await deleteAccount({cookie:undefined})).response.status,401);
+assert.equal((await deleteAccount({origin:'https://evil.test'})).response.status,403);
+assert.equal((await deleteAccount({userId:unaffected.body.user.id})).response.status,409);
+assert.equal((await deleteAccount({data:{...deletionOptions.data,confirmed:false}})).response.status,400);
+assert.equal((await deleteAccount({data:{...deletionOptions.data,password:'incorrect-password'}})).response.status,403);
+assert.deepEqual((await request('/api/progress',{cookie:deletionSession.cookie})).body.progress,merged);
+await post('/api/password/request',{email:credentials.email});
+const deletionDb=new DatabaseSync(database);
+const unitId='data-information';
+deletionDb.prepare('INSERT INTO content_uploads VALUES (?,?,?,?,?,?,?)').run('test-upload',deletingId,'session','test.csv',unitId,'{}',Date.now()+60000);
+deletionDb.prepare('INSERT INTO content_imports(user_id,filename,unit_id,counts,created_at) VALUES (?,?,?,?,?)').run(deletingId,'test.csv',unitId,'{}',Date.now());
+deletionDb.prepare('UPDATE content_lessons SET reviewed_by=? WHERE position=(SELECT MIN(position) FROM content_lessons)').run(deletingId);
+assert.equal(deletionDb.prepare('SELECT COUNT(*) AS n FROM account_tokens WHERE user_id=?').get(deletingId).n,1);
+const deleted=await deleteAccount();
+assert.equal(deleted.response.status,200);
+assert.match(deleted.response.headers.get('set-cookie'),/Max-Age=0/);
+for(const table of ['sessions','account_tokens','progress','content_uploads','content_imports']){
+  assert.equal(deletionDb.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id=?`).get(deletingId).n,0);
+}
+assert.equal(deletionDb.prepare('SELECT id FROM users WHERE id=?').get(deletingId),undefined);
+assert.equal(deletionDb.prepare('SELECT reviewed_by FROM content_lessons ORDER BY position LIMIT 1').get().reviewed_by,null);
+assert.deepEqual(deletionDb.prepare('PRAGMA foreign_key_check').all(),[]);
+deletionDb.close();
+assert.equal((await request('/api/progress',{cookie:secondDeletionSession.cookie})).response.status,401);
+assert.equal((await throughProxy('192.0.2.2',replacement)).response.status,401);
+assert.deepEqual((await request('/api/progress',{cookie:unaffected.cookie})).body.progress,scopedRecord);
+console.log('PASS: public privacy and deletion pages, password and consent checks, atomic account deletion, session revocation, other-account isolation');
 console.log('PASS: email verification, token expiry and replay rejection, password reset and session revocation, progress preservation, account isolation, CSRF, rate limiting');
 }finally{await new Promise(resolve=>server.close(resolve));rmSync(directory,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

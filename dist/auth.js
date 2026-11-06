@@ -14,6 +14,7 @@
   const form=dialog.querySelector('form'),errorBox=dialog.querySelector('.auth-error');
   let mode='login',busy=false,queue=Promise.resolve(),syncState='saved',syncError=null,expired=false,unsaved=false,checking=false;
   let progressBase=null,pendingSave=null,latestSave=null;
+  const returnToDeletion=new URLSearchParams(location.search).get('continue')==='account-delete';
   const link=/^#(verify|reset)=([a-f0-9]{64})$/.exec(location.hash);
   if(link)history.replaceState(null,'',location.pathname+location.search);
   const note=dialog.querySelector('.note');
@@ -147,6 +148,7 @@
       }
       if(restore&&prior?.email!==email){errorBox.textContent='저장하지 못한 기록을 복구하려면 이전과 같은 계정으로 로그인해 주세요.';return;}
       const result=await api('/api/login','POST',{email,password});account=result.user;
+      if(returnToDeletion){markSession(true);location.replace('/account-delete');return;}
       const saved=await api('/api/progress');
       const recover=restore&&prior?.id===account.id;
       if(!recover){progressBase=saved.progress;pendingSave=null;latestSave=null;}
@@ -177,7 +179,11 @@
     main.inert=true;accountButton.disabled=true;
     try{const result=await api('/api/me');if(result.user){const saved=await api('/api/progress');progressBase=saved.progress;auth.user=result.user;markSession(true);state=sanitize(saved.progress);clearEphemeral();}auth.ready=true;updateAccount();redraw();main.inert=false;
       if(!result.user&&(result.expired||signedIn()))auth.expire();
-      if(link){switchMode(link[1]);if(!dialog.open)dialog.showModal();}}
+      if(link){switchMode(link[1]);if(!dialog.open)dialog.showModal();}
+      else if(returnToDeletion){
+        if(result.user)location.replace('/account-delete');
+        else if(!dialog.open){switchMode('login');dialog.showModal();}
+      }}
     catch(error){const notice=document.createElement('div');notice.className='notice';notice.textContent='로그인 상태를 확인하지 못했습니다. 서버 실행 상태를 확인한 뒤 새로고침해 주세요.';header.after(notice);}
     finally{accountButton.disabled=main.inert;}
   }

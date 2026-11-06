@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>계정 삭제 · ADsP 스터디룸</title>
+  <link rel="stylesheet" href="/account-pages.css">
+  <script src="/account-pages.js" defer></script>
+</head>
+<body>
+  <main>
+    <a href="/">← ADsP 스터디룸</a>
+    <h1>ADsP 스터디룸 계정 삭제</h1>
+    <p>계정을 삭제하면 이메일, 학습 진도, 답안, 오답 메모와 모의고사 기록이 삭제되고 모든 기기에서 로그아웃됩니다. 삭제한 계정은 복구할 수 없습니다.</p>
+    <p id="delete-status" role="status">로그인 상태를 확인하는 중입니다.</p>
+    <p id="delete-login" hidden><a href="/?continue=account-delete">로그인하고 계정 삭제하기</a></p>
+    <form id="delete-form" method="post" hidden>
+      <label for="delete-password">현재 비밀번호</label>
+      <input id="delete-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128">
+      <label><input name="confirmed" type="checkbox" required> 계정과 학습 기록을 영구 삭제하는 데 동의합니다.</label>
+      <button type="submit">계정 영구 삭제</button>
+    </form>
+    <p><a href="/privacy">개인정보 처리방침</a></p>
+    <p data-support hidden>로그인이나 삭제가 어려우면 <a data-email></a>로 문의해 주세요.</p>
+  </main>
+</body>
+</html>

@@ -6,6 +6,7 @@ services:
       APP_ORIGIN: https://${SITE_HOST:?Set SITE_HOST to your public hostname}
       COOKIE_SECURE: '1'
       TRUSTED_PROXY_IP: 172.30.84.2
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
       MAIL_MODE: ${MAIL_MODE:-disabled}
       MAIL_WEBHOOK_URL: ${MAIL_WEBHOOK_URL:-}
       MAIL_WEBHOOK_TOKEN: ${MAIL_WEBHOOK_TOKEN:-}

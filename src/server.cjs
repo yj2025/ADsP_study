@@ -63,6 +63,10 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
         files['/curriculum.css']=['curriculum.css','text/css'];
         files['/admin.js']=['admin.js','text/javascript'];files['/admin.css']=['admin.css','text/css'];
         files['/review.js']=['review.js','text/javascript'];
+        files['/privacy']=['privacy.html','text/html'];
+        files['/account-delete']=['account-delete.html','text/html'];
+        files['/account-pages.js']=['account-pages.js','text/javascript'];
+        files['/account-pages.css']=['account-pages.css','text/css'];
         const file = files[url.pathname];
         if (!file || !['GET','HEAD'].includes(req.method)) return json(res,404,{error:'페이지를 찾을 수 없습니다.'});
         res.writeHead(200, {'Content-Type':file[1]+'; charset=utf-8','Cache-Control':'no-cache'});
@@ -70,6 +74,10 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
       }
       if (!['GET','POST','PUT'].includes(req.method)) return json(res,405,{error:'지원하지 않는 요청입니다.'});
       if(url.pathname==='/api/content' && req.method==='GET') return json(res,200,readContent(db));
+      if(url.pathname==='/api/public-service' && req.method==='GET'){
+        const email=process.env.SUPPORT_EMAIL?.trim();
+        return json(res,200,{supportEmail:email&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:null});
+      }
       if (req.method !== 'GET') {
         const allowed = origin || `${protocol}://127.0.0.1:${server.address().port}`;
         const allowedLocal = !origin && req.headers.origin === `${protocol}://localhost:${server.address().port}`;
@@ -178,6 +186,41 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
       if(url.pathname==='/api/logout' && req.method==='POST') {
         const token=/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||'')?.[1];
         db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));
+        return json(res,200,{ok:true},{'Set-Cookie':cookie('',0)});
+      }
+      if(url.pathname==='/api/account/delete' && req.method==='POST'){
+        if(req.headers['x-study-user']!==String(account.id))return json(res,409,{error:'로그인 계정이 변경되었습니다. 페이지를 다시 열어 주세요.'});
+        const input=await body(req);
+        const password=input?.password;
+        if(input?.confirmed!==true||typeof password!=='string'||password.length<10||password.length>128){
+          return json(res,400,{error:'현재 비밀번호를 입력하고 삭제에 동의해 주세요.'});
+        }
+        const now=Date.now(),key=`delete:${account.id}`;
+        for(const [id,entry] of limits)if(entry.until<=now)limits.delete(id);
+        const limit=limits.get(key)??{count:0,until:now+15*60000};
+        if(limit.count>=5)return json(res,429,{error:'시도가 너무 많습니다. 15분 후 다시 시도해 주세요.'});
+        limit.count++;limits.set(key,limit);
+        const row=db.prepare('SELECT salt,password_hash FROM users WHERE id=?').get(account.id);
+        if(!row||user(req)?.id!==account.id)return json(res,401,{code:'SESSION_EXPIRED',error:'다시 로그인해 주세요.'});
+        const hashed=await derive(password,row.salt,64);
+        if(!timingSafeEqual(hashed,Buffer.from(row.password_hash,'hex')))return json(res,403,{error:'현재 비밀번호가 일치하지 않습니다.'});
+        db.exec('BEGIN IMMEDIATE');
+        try{
+          const current=db.prepare('SELECT password_hash FROM users WHERE id=?').get(account.id);
+          if(user(req)?.id!==account.id||current?.password_hash!==row.password_hash){
+            db.exec('ROLLBACK');
+            return json(res,401,{code:'SESSION_EXPIRED',error:'다시 로그인해 주세요.'});
+          }
+          for(const table of ['sessions','account_tokens','progress','content_uploads','content_imports']){
+            db.prepare(`DELETE FROM ${table} WHERE user_id=?`).run(account.id);
+          }
+          for(const table of ['content_lessons','content_questions']){
+            db.prepare(`UPDATE ${table} SET reviewed_by=NULL WHERE reviewed_by=?`).run(account.id);
+          }
+          db.prepare('DELETE FROM users WHERE id=?').run(account.id);
+          db.exec('COMMIT');
+        }catch(error){db.exec('ROLLBACK');throw error;}
+        limits.delete(key);
         return json(res,200,{ok:true},{'Set-Cookie':cookie('',0)});
       }
       if(url.pathname==='/api/progress' && req.method==='GET') {
