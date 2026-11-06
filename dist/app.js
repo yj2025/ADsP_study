@@ -102,6 +102,7 @@ function render(){
   if(!subjects.length){main.innerHTML='<section class="panel" role="status">학습 콘텐츠를 불러오는 중입니다.</section>';return;}
   const r=route();main.innerHTML=r==='admin'?(window.ContentAdmin?.render()??'<section class="panel" role="status">관리자 화면을 불러오는 중입니다.</section>'):(!storageOK?'<div class="notice">브라우저 저장소를 사용할 수 없어 기록이 현재 탭에서만 유지됩니다.</div>':'')+scopePicker()+({home,learn,quiz,review}[r])();
   document.getElementById('reset').hidden=r==='admin';
+  if(r==='admin'&&window.StudyAuth?.user?.role==='admin'&&window.ContentReview)main.insertAdjacentHTML('beforeend',window.ContentReview.render());
   document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===r));
   document.getElementById('breadcrumb').textContent=r==='admin'?'관리자 / 콘텐츠 관리':`${activeSubject()?.title??''} / ${activeUnit()?.title??'단원 선택'} / ${{home:'대시보드',learn:'개념 학습',quiz:'문제 풀이',review:'오답 노트'}[r]}`;
   document.getElementById('wrong-badge').textContent=pending().length;

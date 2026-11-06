@@ -25,6 +25,14 @@ function setupContent(db) {
     } catch(error) { db.exec('ROLLBACK');throw error; }
   }
   setupCurriculum(db);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('SELECT id FROM content_migrations WHERE id=?').get('review-v1')) {
+      for (const table of ['content_lessons','content_questions']) db.exec(`ALTER TABLE ${table} ADD COLUMN review_status TEXT NOT NULL DEFAULT 'published' CHECK(review_status IN ('draft','published')); ALTER TABLE ${table} ADD COLUMN reviewed_at INTEGER; ALTER TABLE ${table} ADD COLUMN reviewed_by INTEGER;`);
+      db.prepare('INSERT INTO content_migrations VALUES (?)').run('review-v1');
+    }
+    db.exec('COMMIT');
+  } catch (error) {db.exec('ROLLBACK');throw error;}
 }
 function setupCurriculum(db){
   if(db.prepare('SELECT id FROM content_migrations WHERE id=?').get('curriculum-v1'))return;
@@ -46,10 +54,10 @@ function setupCurriculum(db){
 function readContent(db) {
   db.exec('BEGIN');
   try {
-  const rows=db.prepare('SELECT * FROM content_lessons ORDER BY position').all();
+  const rows=db.prepare("SELECT * FROM content_lessons WHERE review_status='published' ORDER BY position").all();
   const lessons=rows.map(l=>({id:l.id,unit_id:l.unit_id,title:escapeHTML(l.title),body:l.body_format==='html'?l.body:`<div class="content-text">${escapeHTML(l.body)}</div>`,source_url:l.source_url,license:l.license}));
   const indices=new Map(rows.map((l,i)=>[l.id,i]));
-  const questions=db.prepare('SELECT * FROM content_questions ORDER BY position').all().map(q=>({id:q.id,lesson_id:q.lesson_id,lesson:indices.get(q.lesson_id),text:escapeHTML(q.text),options:JSON.parse(q.options).map(escapeHTML),answer:q.answer,explanation:escapeHTML(q.explanation),source_url:q.source_url,license:q.license}));
+  const questions=db.prepare("SELECT q.* FROM content_questions q JOIN content_lessons l ON l.id=q.lesson_id WHERE q.review_status='published' AND l.review_status='published' ORDER BY q.position").all().map(q=>({id:q.id,lesson_id:q.lesson_id,lesson:indices.get(q.lesson_id),text:escapeHTML(q.text),options:JSON.parse(q.options).map(escapeHTML),answer:q.answer,explanation:escapeHTML(q.explanation),source_url:q.source_url,license:q.license}));
   const subjects=db.prepare('SELECT id,title FROM content_subjects ORDER BY position').all().map(s=>({...s,title:escapeHTML(s.title)}));
   const units=db.prepare('SELECT id,subject_id,title FROM content_units ORDER BY position').all().map(u=>({...u,title:escapeHTML(u.title)}));
   for(const q of questions)q.unit_id=lessons[q.lesson].unit_id;
@@ -140,17 +148,17 @@ function validateBundle(db,bundle) {
   });
   return {subjects:cleanSubjects,units:cleanUnits,lessons:cleanLessons,questions:cleanQuestions};
 }
-function importContent(db,bundle,{dryRun=false,afterInsert}={}) {
+function importContent(db,bundle,{dryRun=false,afterInsert,reviewStatus='published'}={}) {
   db.exec('BEGIN IMMEDIATE');
   try {
     const clean=validateBundle(db,bundle);
     if(!dryRun){
       for(const s of clean.subjects)db.prepare('INSERT INTO content_subjects(id,title) VALUES (?,?)').run(s.id,s.title);
       for(const u of clean.units)db.prepare('INSERT INTO content_units(id,subject_id,title) VALUES (?,?,?)').run(u.id,u.subject_id,u.title);
-      const lesson=db.prepare('INSERT INTO content_lessons(id,title,body,source_url,license,unit_id) VALUES (?,?,?,?,?,?)');
-      const question=db.prepare('INSERT INTO content_questions(id,lesson_id,text,options,answer,explanation,source_url,license) VALUES (?,?,?,?,?,?,?,?)');
-      for(const l of clean.lessons)lesson.run(l.id,l.title,l.body,l.source_url,l.license,l.unit_id);
-      for(const q of clean.questions)question.run(q.id,q.lesson_id,q.text,JSON.stringify(q.options),q.answer,q.explanation,q.source_url,q.license);
+      const lesson=db.prepare('INSERT INTO content_lessons(id,title,body,source_url,license,unit_id,review_status) VALUES (?,?,?,?,?,?,?)');
+      const question=db.prepare('INSERT INTO content_questions(id,lesson_id,text,options,answer,explanation,source_url,license,review_status) VALUES (?,?,?,?,?,?,?,?,?)');
+      for(const l of clean.lessons)lesson.run(l.id,l.title,l.body,l.source_url,l.license,l.unit_id,reviewStatus);
+      for(const q of clean.questions)question.run(q.id,q.lesson_id,q.text,JSON.stringify(q.options),q.answer,q.explanation,q.source_url,q.license,reviewStatus);
       if(afterInsert)afterInsert({lessons:clean.lessons.length,questions:clean.questions.length});
     }
     db.exec(dryRun?'ROLLBACK':'COMMIT');

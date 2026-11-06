@@ -6,6 +6,7 @@ const { mkdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const derive = promisify(scrypt);
 const {setupContent,readContent,importContent}=require('./content-store.cjs');
+const {reviewList,publish}=require('./review-store.cjs');
 const {setupAdmin,prepareUpload,digest}=require('./admin-store.cjs');
 
 function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite'), secure = process.env.COOKIE_SECURE === '1', origin } = {}) {
@@ -53,6 +54,7 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
         files['/auth.css']=['auth.css','text/css'];
         files['/curriculum.css']=['curriculum.css','text/css'];
         files['/admin.js']=['admin.js','text/javascript'];files['/admin.css']=['admin.css','text/css'];
+        files['/review.js']=['review.js','text/javascript'];
         const file = files[url.pathname];
         if (!file || !['GET','HEAD'].includes(req.method)) return json(res,404,{error:'페이지를 찾을 수 없습니다.'});
         res.writeHead(200, {'Content-Type':file[1]+'; charset=utf-8','Cache-Control':'no-cache'});
@@ -96,6 +98,8 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
         if(!currentAdmin())return json(res,403,{error:'관리자만 콘텐츠를 관리할 수 있습니다.'});
         if(req.method!=='GET'&&req.headers['x-study-user']!==String(account.id))return json(res,409,{error:'로그인 계정이 변경되었습니다. 새로고침해 주세요.'});
         const sessionToken=/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||'')?.[1];
+        if(url.pathname==='/api/admin/content/review'&&req.method==='GET')return json(res,200,reviewList(db,url.searchParams.get('unit_id'),url.searchParams.get('status')??'draft'));
+        if(url.pathname==='/api/admin/content/publish'&&req.method==='POST')return json(res,200,{counts:publish(db,await body(req,128*1024),account.id,currentAdmin)});
         if(url.pathname==='/api/admin/content/validate'&&req.method==='POST'){
           const input=await body(req,12*1024*1024);
           if(!currentAdmin())return json(res,403,{error:'관리자 권한이 변경되었습니다.'});
@@ -115,12 +119,12 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
           if(!staged)return json(res,409,{error:'검증 결과가 만료되었거나 이미 사용되었습니다. 다시 검증해 주세요.'});
           const bundle=JSON.parse(staged.bundle);
           try{
-            const counts=importContent(db,bundle,{afterInsert:counts=>{
+            const counts=importContent(db,bundle,{reviewStatus:'draft',afterInsert:counts=>{
               if(!currentAdmin())throw Object.assign(Error('관리자 권한이 변경되었습니다.'),{status:403});
               db.prepare('DELETE FROM content_uploads WHERE token_hash=?').run(staged.token_hash);
               db.prepare('INSERT INTO content_imports(user_id,filename,unit_id,counts,created_at) VALUES (?,?,?,?,?)').run(account.id,staged.filename,staged.unit_id,JSON.stringify(counts),Date.now());
             }});
-            return json(res,200,{ok:true,counts,unit_id:staged.unit_id});
+            return json(res,200,{ok:true,status:'draft',counts,unit_id:staged.unit_id});
           }catch(error){return json(res,error.status||409,{error:`저장하지 못했습니다. ${error.message} 다시 검증해 주세요.`});}
         }
         return json(res,404,{error:'관리자 요청을 찾을 수 없습니다.'});

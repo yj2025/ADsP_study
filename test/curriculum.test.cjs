@@ -18,9 +18,10 @@ const oldLessons=legacy.prepare('SELECT * FROM content_lessons ORDER BY position
 const oldQuestions=legacy.prepare('SELECT * FROM content_questions ORDER BY position').all();
 setupContent(legacy);setupContent(legacy);
 assert.equal(legacy.prepare('SELECT payload FROM progress WHERE user_id=1').get().payload,raw);
-assert.deepEqual(legacy.prepare('SELECT * FROM content_questions ORDER BY position').all(),oldQuestions);
+const originalFields=({review_status,reviewed_at,reviewed_by,...row})=>row;
+assert.deepEqual(legacy.prepare('SELECT * FROM content_questions ORDER BY position').all().map(originalFields),oldQuestions.map(q=>({...q})));
 const migrated=legacy.prepare('SELECT * FROM content_lessons ORDER BY position').all();
-assert.deepEqual(migrated.map(({unit_id,...l})=>l),oldLessons.map(l=>({...l})));assert.ok(migrated.every(l=>l.unit_id==='data-information'));
+assert.deepEqual(migrated.map(({unit_id,...l})=>originalFields(l)),oldLessons.map(l=>({...l})));assert.ok(migrated.every(l=>l.unit_id==='data-information'&&l.review_status==='published'));
 let data=readContent(legacy);assert.equal(data.subjects.length,3);assert.equal(data.units.length,4);
 assert.ok(data.questions.every(q=>q.unit_id==='data-information'));
 const bundle=parseFile('content/subject-example.json');

@@ -31,7 +31,7 @@ function run(args){
   const bundle=parseFile(filename);
   // A dry run never creates or migrates the actual database.
   if(dryRun){const memory=validationDatabase(database);try{console.log(JSON.stringify(importContent(memory,bundle,{dryRun:true})));}finally{memory.close();}return;}
-  fs.mkdirSync(path.dirname(database),{recursive:true});const db=new DatabaseSync(database);try{db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');setupContent(db);console.log(JSON.stringify(importContent(db,bundle)));}finally{db.close();}
+  fs.mkdirSync(path.dirname(database),{recursive:true});const db=new DatabaseSync(database);try{db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');setupContent(db);console.log(JSON.stringify(importContent(db,bundle,{reviewStatus:'draft'})));}finally{db.close();}
 }
 if(require.main===module){try{run(process.argv.slice(2));}catch(error){console.error(`가져오기 실패: ${error.message}`);process.exitCode=1;}}
 module.exports={run};

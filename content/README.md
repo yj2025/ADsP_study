@@ -24,7 +24,7 @@ node scripts/import-content.cjs content/example.csv
 node scripts/import-content.cjs content/example.json --database data/practice.sqlite
 ```
 
-성공하면 `{"lessons":1,"questions":1,"dryRun":false}`가 출력됩니다. 서버는 DB를 매 요청마다 조회하므로 가져온 후 학습 페이지를 새로고침하면 목록과 진도가 반영됩니다. 서버 재시작은 필요하지 않습니다. 학습 콘텐츠가 늘어나면 전체 학습량이 늘어 진도율이 내려갈 수 있지만, 이미 완료한 개념·답안·오답 기록은 유지됩니다.
+성공하면 `{"lessons":1,"questions":1,"dryRun":false}`가 출력됩니다. CLI로 가져온 개념과 문제도 초안입니다. [관리자 화면](../docs/ADMIN.md)에서 검수 후 공개하면 학습 화면에 반영됩니다. 학습 콘텐츠가 늘어나면 전체 학습량이 늘어 진도율이 내려갈 수 있지만, 이미 완료한 개념·답안·오답 기록은 유지됩니다.
 
 예제는 자체 작성한 예상 학습 콘텐츠이며, 기본 DB에 자동 추가하지 않습니다. `unit_id`를 생략한 기존 파일의 개념은 ‘데이터 이해 / 데이터와 정보’ 단원에 추가됩니다. 문제는 연결한 개념의 단원에 자동으로 소속됩니다.
 
