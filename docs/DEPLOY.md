@@ -32,6 +32,8 @@ npm run db -- verify data/restored.sqlite
 
 운영 전환 시에는 새 경로에 복구해 검증한 뒤 서버를 중지하고 `DATABASE_PATH`를 복구본으로 지정해 다시 시작합니다. Compose에서 기존 DB를 이전할 경우 새 볼륨을 사용하는 상태에서 백업 파일을 컨테이너의 읽기 전용 경로에 마운트한 후 `node scripts/database.cjs restore /restore/study.sqlite /data/study.sqlite`를 실행합니다. 파일은 컨테이너의 `node` 사용자가 읽을 수 있어야 합니다. 복구 대상이 비어 있지 않으면 기존 파일을 보존하고 새 경로를 선택하세요.
 
+회원 데이터가 있는 백업을 복구할 때는 복구본을 먼저 격리합니다. 백업 생성 이후 삭제된 계정이 있는지 확인하고, 있다면 그 계정과 연결 데이터를 제거한 뒤 검증합니다. 삭제 여부를 확인할 수 없으면 회원 DB 복구본을 서비스에 연결하지 않습니다. 콘텐츠만 필요할 때는 검수된 JSON 원본을 현재 DB에 가져오는 방법을 우선 사용합니다. 운영에 앞서 백업 보관 기한, 폐기 담당자와 확인 방법을 정하고 개인정보 처리방침에 반영합니다.
+
 ## Android 앱 연결
 
 1. 공개 HTTPS 배포 후 `/manifest.webmanifest`를 Bubblewrap에 전달해 TWA 프로젝트를 생성합니다. Android 패키지 이름은 이때 확정합니다.
