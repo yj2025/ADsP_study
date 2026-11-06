@@ -60,9 +60,10 @@ function readContent(db) {
   const questions=db.prepare("SELECT q.* FROM content_questions q JOIN content_lessons l ON l.id=q.lesson_id WHERE q.review_status='published' AND l.review_status='published' ORDER BY q.position").all().map(q=>({id:q.id,lesson_id:q.lesson_id,lesson:indices.get(q.lesson_id),text:escapeHTML(q.text),options:JSON.parse(q.options).map(escapeHTML),answer:q.answer,explanation:escapeHTML(q.explanation),source_url:q.source_url,license:q.license}));
   const subjects=db.prepare('SELECT id,title FROM content_subjects ORDER BY position').all().map(s=>({...s,title:escapeHTML(s.title)}));
   const units=db.prepare('SELECT id,subject_id,title FROM content_units ORDER BY position').all().map(u=>({...u,title:escapeHTML(u.title)}));
+  const withdrawnQuestions=db.prepare("SELECT q.id,l.unit_id FROM content_questions q JOIN content_lessons l ON l.id=q.lesson_id WHERE q.review_status='draft' AND q.reviewed_at IS NOT NULL").all();
   for(const q of questions)q.unit_id=lessons[q.lesson].unit_id;
   db.exec('COMMIT');
-  return {subjects,units,lessons,questions};
+  return {subjects,units,lessons,questions,withdrawnQuestions};
   } catch(error) { db.exec('ROLLBACK');throw error; }
 }
 function parseCSV(text) {

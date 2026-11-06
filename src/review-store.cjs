@@ -50,7 +50,7 @@ function reviseQuestion(db,input,authorized){
       throw fail('문제의 검수 상태가 변경되었습니다. 목록을 다시 불러와 주세요.',409);
     }
     if(action==='withdraw'){
-      db.prepare("UPDATE content_questions SET review_status='draft' WHERE id=?").run(id);
+      db.prepare("UPDATE content_questions SET review_status='draft',reviewed_at=COALESCE(reviewed_at,?) WHERE id=?").run(Date.now(),id);
     }else{
       if(!changes||typeof changes!=='object'||Array.isArray(changes))throw fail('수정할 문제 내용을 입력해 주세요.');
       const {text,options,answer,explanation}=changes;

@@ -58,3 +58,11 @@ app=boot(data,record,true);app.run('chooseUnit("analysis-approach")');assert.equ
 const interleaved={...data,questions:[...data.questions,{...data.questions[0],id:'tail-question'}]};
 app=boot(interleaved);app.run('state.quizIndex=5');app.click({action:'next'});assert.equal(app.run('questions[state.quizIndex].id'),'tail-question');app.click({action:'previous-question'});assert.equal(app.run('questions[state.quizIndex].id'),'q6');
 console.log('PASS: legacy schema/progress preservation, idempotent migration, JSON/CSV curriculum import, reference checks, unit isolation, cursors, refresh/account restoration, scoped reset, empty units');
+const hiddenData={...data,questions:data.questions.filter(q=>q.id!=='q1'),withdrawnQuestions:[{id:'q1',unit_id:'data-information'}]};
+app=boot(hiddenData,record);
+app.reset();
+const resetSnapshot=JSON.parse(app.memory['adsp-study-v1']);
+app=boot(data,resetSnapshot);
+assert.equal(app.run('Object.hasOwn(state.answers,"q1")'),false);
+assert.equal(app.run('Object.hasOwn(state.mistakes,"q1")'),false);
+assert.equal(app.run('state.resolved.includes("q1")'),false);

@@ -1,7 +1,7 @@
 'use strict';
 const KEY='adsp-study-v1';
 const DEFAULT_SUBJECT='data-understanding',DEFAULT_UNIT='data-information';
-let subjects=[],units=[],lessons=[],questions=[];
+let subjects=[],units=[],lessons=[],questions=[],withdrawnQuestions=[];
 let storageOK=true,state=fresh();
 let selected=null,reviewId=null,reviewResult=null,quizSummary=false;
 let quizSetup=false;
@@ -301,11 +301,16 @@ main.addEventListener('click',e=>{
 window.addEventListener('hashchange',()=>{clearActivity();render();window.scrollTo(0,0);main.focus({preventScroll:true});});
 document.getElementById('reset').addEventListener('click',()=>{
   if(!activeUnit()||!confirm(`‘${activeUnit().title}’ 단원의 개념 진도, 답안, 오답 기록을 초기화할까요? 다른 단원의 기록은 유지됩니다.`))return;
-  const indices=lessonIndices(),ids=new Set(unitQuestions().map(q=>q.id));
+  const indices=lessonIndices(),ids=new Set([...unitQuestions(),...withdrawnQuestions.filter(q=>q.unit_id===state.selectedUnitId)].map(q=>q.id));
   state.completed=state.completed.filter(i=>!indices.includes(i));for(const id of ids)delete state.answers[id];
   state.wrong=state.wrong.filter(id=>!ids.has(id));state.resolved=state.resolved.filter(id=>!ids.has(id));delete state.positions[state.selectedUnitId];
   delete state.quizRounds[state.selectedUnitId];
   for(const id of ids)delete state.mistakes[id];
+  if(state.hiddenQuestionRecords){
+    const hidden=state.hiddenQuestionRecords;
+    for(const id of ids){delete hidden.answers[id];delete hidden.mistakes[id];}
+    hidden.resolved=hidden.resolved.filter(id=>!ids.has(id));
+  }
   state.lesson=-1;state.quizIndex=-1;normalizeSelection(state);clearActivity();persist();render();
 });
 function installContent(data,savedProgress){
@@ -314,6 +319,7 @@ function installContent(data,savedProgress){
   units=data.units??[{id:DEFAULT_UNIT,subject_id:DEFAULT_SUBJECT,title:'데이터와 정보'}];
   lessons=data.lessons.map(l=>({...l,unit_id:l.unit_id??DEFAULT_UNIT}));
   questions=data.questions.map(q=>({...q,lesson:q.lesson_id?lessons.findIndex(l=>l.id===q.lesson_id):q.lesson}));
+  withdrawnQuestions=data.withdrawnQuestions??[];
   try{state=sanitize(savedProgress===undefined?JSON.parse(localStorage.getItem(KEY)):savedProgress);}catch{storageOK=false;state=normalizeSelection(fresh());}
   render();
 }

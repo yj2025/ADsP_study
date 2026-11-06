@@ -9,6 +9,12 @@ function conflict(){
 }
 
 function mergeProgress(base,next,current){
+  const beforeExam=base?.exam,afterExam=next?.exam,storedExam=current?.exam;
+  // An exam submission and its derived learning records must commit together.
+  if(!equal(beforeExam,afterExam)&&!equal(beforeExam,storedExam)&&!equal(afterExam,storedExam)&&
+     (afterExam?.submitted||storedExam?.submitted))throw conflict();
+  if(beforeExam?.submitted&&afterExam&&equal(beforeExam.ids,afterExam.ids)&&
+     beforeExam.deadline===afterExam.deadline&&!equal(beforeExam,afterExam))throw conflict();
   function merge(before,after,stored,field,depth,parent){
     if(equal(before,after))return stored;
     if(equal(before,stored)||equal(after,stored))return after;

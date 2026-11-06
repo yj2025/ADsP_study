@@ -7,6 +7,7 @@ const { mkdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const {isIP}=require('node:net');
 const {mergeProgress}=require('./progress-merge.cjs');
+const {removeAccountData}=require('./account-data.cjs');
 const derive = promisify(scrypt);
 const {setupContent,readContent,importContent}=require('./content-store.cjs');
 const {reviewList,publish,reviseQuestion}=require('./review-store.cjs');
@@ -19,6 +20,9 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
   const db = new DatabaseSync(database);
   db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS user_id_sequence (singleton INTEGER PRIMARY KEY CHECK(singleton=1), last_id INTEGER NOT NULL);
+    INSERT INTO user_id_sequence SELECT 1,COALESCE(MAX(id),0) FROM users WHERE true
+      ON CONFLICT(singleton) DO UPDATE SET last_id=MAX(last_id,excluded.last_id);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS progress (user_id INTEGER PRIMARY KEY REFERENCES users(id), payload TEXT NOT NULL);`);
   const limits = new Map();
@@ -147,8 +151,10 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
           const salt=randomBytes(16).toString('hex');
           const hashed=await derive(password,salt,64);
           if(account) return json(res,409,{error:'이 이메일로 가입할 수 없습니다. 로그인 정보를 확인해 주세요.'});
-          try {const result=db.prepare('INSERT INTO users(email,salt,password_hash) VALUES (?,?,?)').run(email,salt,hashed.toString('hex'));
-            let delivery=true;try{await issue(db,sendMail,{id:Number(result.lastInsertRowid),email},'verify',mailOrigin);}catch{delivery=false;}
+          try {
+            const {last_id:id}=db.prepare('UPDATE user_id_sequence SET last_id=MAX(last_id,(SELECT COALESCE(MAX(id),0) FROM users))+1 RETURNING last_id').get();
+            db.prepare('INSERT INTO users(id,email,salt,password_hash) VALUES (?,?,?,?)').run(id,email,salt,hashed.toString('hex'));
+            let delivery=true;try{await issue(db,sendMail,{id,email},'verify',mailOrigin);}catch{delivery=false;}
             return json(res,202,{verificationRequired:true,delivery});}
           catch(error){if(error.code==='ERR_SQLITE_ERROR' && /UNIQUE/.test(error.message))return json(res,409,{error:'이 이메일로 가입할 수 없습니다.'});throw error;}
         }
@@ -226,13 +232,7 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
             db.exec('ROLLBACK');
             return json(res,401,{code:'SESSION_EXPIRED',error:'다시 로그인해 주세요.'});
           }
-          for(const table of ['sessions','account_tokens','progress','content_uploads','content_imports']){
-            db.prepare(`DELETE FROM ${table} WHERE user_id=?`).run(account.id);
-          }
-          for(const table of ['content_lessons','content_questions']){
-            db.prepare(`UPDATE ${table} SET reviewed_by=NULL WHERE reviewed_by=?`).run(account.id);
-          }
-          db.prepare('DELETE FROM users WHERE id=?').run(account.id);
+          removeAccountData(db,account.id);
           db.exec('COMMIT');
         }catch(error){db.exec('ROLLBACK');throw error;}
         limits.delete(key);
