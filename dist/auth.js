@@ -22,6 +22,7 @@
   function loadGuest(){try{return sanitize(JSON.parse(localStorage.getItem(KEY)));}catch{return fresh();}}
   const auth=window.StudyAuth={
     user:null,
+    ready:false,
     status(){const el=document.getElementById('save-status');el.textContent=syncState==='saving'?'● 계정에 저장 중…':syncState==='error'?'저장 실패 · 아래에서 재시도':'● 계정에 저장됨';},
     save(value){
       const payload=JSON.stringify(value),userId=auth.user.id;
@@ -41,6 +42,7 @@
     el.querySelector('button').onclick=()=>auth.save(progressSnapshot());header.after(el);
   }
   function updateAccount(){
+    window.ContentAdmin?.update();
     accountButton.textContent=auth.user?'로그아웃':'로그인 / 회원가입';
     const bottom=document.querySelector('.side-bottom');
     bottom.querySelector('div').textContent=auth.user?auth.user.email:'꾸준히 공부하는 나';
@@ -91,7 +93,7 @@
     if(!await window.contentReady)return;
     updateAccount();if(location.protocol==='file:')return;
     main.inert=true;accountButton.disabled=true;
-    try{const result=await api('/api/me');if(result.user){const saved=await api('/api/progress');auth.user=result.user;state=sanitize(saved.progress);clearEphemeral();}updateAccount();redraw();main.inert=false;}
+    try{const result=await api('/api/me');if(result.user){const saved=await api('/api/progress');auth.user=result.user;state=sanitize(saved.progress);clearEphemeral();}auth.ready=true;updateAccount();redraw();main.inert=false;}
     catch(error){const notice=document.createElement('div');notice.className='notice';notice.textContent='로그인 상태를 확인하지 못했습니다. 서버 실행 상태를 확인한 뒤 새로고침해 주세요.';header.after(notice);}
     finally{accountButton.disabled=main.inert;}
   }

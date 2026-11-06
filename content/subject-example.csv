@@ -1,0 +1,4 @@
+type,id,title,body,subject_id,unit_id,lesson_id,text,option1,option2,option3,option4,answer,explanation
+unit,csv-planning-unit,CSV로 추가한 분석 기획 단원,,analysis-planning,,,,,,,,,
+lesson,csv-planning-lesson,분석 목표 정하기,분석을 시작하기 전에 해결할 문제와 목표를 정의합니다.,,csv-planning-unit,,,,,,,,
+question,csv-planning-question,,,,,csv-planning-lesson,분석을 시작할 때 먼저 정의할 것은?,해결할 문제와 목표,보고서 색상,문서의 글꼴,파일 압축 방식,1,문제와 목표를 명확히 한 뒤 필요한 데이터와 분석 방법을 검토합니다.

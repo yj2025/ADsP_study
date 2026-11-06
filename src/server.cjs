@@ -5,9 +5,10 @@ const { promisify } = require('node:util');
 const { mkdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const derive = promisify(scrypt);
-const {setupContent,readContent}=require('./content-store.cjs');
+const {setupContent,readContent,importContent}=require('./content-store.cjs');
+const {setupAdmin,prepareUpload,digest}=require('./admin-store.cjs');
 
-function createApp({ database = path.join(__dirname, 'data', 'study.sqlite'), secure = process.env.COOKIE_SECURE === '1', origin } = {}) {
+function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite'), secure = process.env.COOKIE_SECURE === '1', origin } = {}) {
   if (database !== ':memory:') mkdirSync(path.dirname(database), { recursive: true });
   const db = new DatabaseSync(database);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
@@ -16,19 +17,21 @@ function createApp({ database = path.join(__dirname, 'data', 'study.sqlite'), se
     CREATE TABLE IF NOT EXISTS progress (user_id INTEGER PRIMARY KEY REFERENCES users(id), payload TEXT NOT NULL);`);
   const limits = new Map();
   setupContent(db);
+  setupAdmin(db);
   const dummySalt = randomBytes(16).toString('hex');
   const hashToken = t => createHash('sha256').update(t).digest('hex');
   const cookie = (token, age) => `adsp_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? '; Secure' : ''}`;
   function json(res, code, data, headers = {}) { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers}); res.end(JSON.stringify(data)); }
   async function body(req,maxBytes=16384) {
-    let text = '';
-    for await (const chunk of req) { text += chunk; if (Buffer.byteLength(text) > maxBytes) throw Object.assign(Error('요청이 너무 큽니다.'), {status:413}); }
+    const chunks=[];let size=0;
+    for await (const chunk of req) {size+=chunk.length;if(size>maxBytes)throw Object.assign(Error('요청이 너무 큽니다.'),{status:413});chunks.push(chunk);}
+    const text=Buffer.concat(chunks).toString('utf8');
     try { return JSON.parse(text); } catch { throw Object.assign(Error('올바른 JSON 요청이 필요합니다.'), {status:400}); }
   }
   function user(req) {
     const token = /(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
     if (!token) return null;
-    return db.prepare('SELECT users.id, users.email FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>?').get(hashToken(token), Date.now()) || null;
+    return db.prepare('SELECT users.id, users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>?').get(hashToken(token), Date.now()) || null;
   }
   function session(req, res, account) {
     const old = /(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
@@ -36,7 +39,8 @@ function createApp({ database = path.join(__dirname, 'data', 'study.sqlite'), se
     db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
     const token = randomBytes(32).toString('hex');
     db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(hashToken(token), account.id, Date.now()+7*86400000);
-    json(res, 200, {user:{id:account.id,email:account.email}}, {'Set-Cookie':cookie(token, 7*86400)});
+    const publicAccount=db.prepare('SELECT id,email,role FROM users WHERE id=?').get(account.id);
+    json(res, 200, {user:publicAccount}, {'Set-Cookie':cookie(token, 7*86400)});
   }
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -47,10 +51,12 @@ function createApp({ database = path.join(__dirname, 'data', 'study.sqlite'), se
       if (!url.pathname.startsWith('/api/')) {
         const files = {'/':['index.html','text/html'], '/index.html':['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/auth.js':['auth.js','text/javascript'], '/style.css':['style.css','text/css']};
         files['/auth.css']=['auth.css','text/css'];
+        files['/curriculum.css']=['curriculum.css','text/css'];
+        files['/admin.js']=['admin.js','text/javascript'];files['/admin.css']=['admin.css','text/css'];
         const file = files[url.pathname];
         if (!file || !['GET','HEAD'].includes(req.method)) return json(res,404,{error:'페이지를 찾을 수 없습니다.'});
         res.writeHead(200, {'Content-Type':file[1]+'; charset=utf-8','Cache-Control':'no-cache'});
-        return res.end(req.method==='HEAD'?undefined:readFileSync(path.join(__dirname,'dist',file[0])));
+        return res.end(req.method==='HEAD'?undefined:readFileSync(path.join(__dirname,'..','dist',file[0])));
       }
       if (!['GET','POST','PUT'].includes(req.method)) return json(res,405,{error:'지원하지 않는 요청입니다.'});
       if(url.pathname==='/api/content' && req.method==='GET') return json(res,200,readContent(db));
@@ -85,6 +91,40 @@ function createApp({ database = path.join(__dirname, 'data', 'study.sqlite'), se
       }
       const account=user(req);
       if (!account) return json(res,401,{error:'로그인이 필요합니다.'});
+      if(url.pathname.startsWith('/api/admin/')){
+        const currentAdmin=()=>user(req)?.role==='admin';
+        if(!currentAdmin())return json(res,403,{error:'관리자만 콘텐츠를 관리할 수 있습니다.'});
+        if(req.method!=='GET'&&req.headers['x-study-user']!==String(account.id))return json(res,409,{error:'로그인 계정이 변경되었습니다. 새로고침해 주세요.'});
+        const sessionToken=/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||'')?.[1];
+        if(url.pathname==='/api/admin/content/validate'&&req.method==='POST'){
+          const input=await body(req,12*1024*1024);
+          if(!currentAdmin())return json(res,403,{error:'관리자 권한이 변경되었습니다.'});
+          db.prepare('DELETE FROM content_uploads WHERE expires<=? OR user_id=?').run(Date.now(),account.id);
+          try{
+            const prepared=prepareUpload(db,input),token=randomBytes(32).toString('hex');
+            const expires=Date.now()+10*60000;
+            db.prepare('INSERT INTO content_uploads VALUES (?,?,?,?,?,?,?)').run(digest(token),account.id,digest(sessionToken),input.filename,prepared.unit.id,JSON.stringify(prepared.bundle),expires);
+            return json(res,200,{valid:true,validation_token:token,expires_at:expires,counts:prepared.counts,unit:prepared.unit,warnings:prepared.warnings,preview:prepared.preview});
+          }catch(error){return json(res,error.status||422,{valid:false,errors:[error.message],error:error.message});}
+        }
+        if(url.pathname==='/api/admin/content/import'&&req.method==='POST'){
+          const input=await body(req);
+          if(!currentAdmin())return json(res,403,{error:'관리자 권한이 변경되었습니다.'});
+          if(typeof input?.validation_token!=='string'||!/^[a-f0-9]{64}$/.test(input.validation_token))return json(res,400,{error:'먼저 파일을 검증해 주세요.'});
+          const staged=db.prepare('SELECT * FROM content_uploads WHERE token_hash=? AND user_id=? AND session_hash=? AND expires>?').get(digest(input.validation_token),account.id,digest(sessionToken),Date.now());
+          if(!staged)return json(res,409,{error:'검증 결과가 만료되었거나 이미 사용되었습니다. 다시 검증해 주세요.'});
+          const bundle=JSON.parse(staged.bundle);
+          try{
+            const counts=importContent(db,bundle,{afterInsert:counts=>{
+              if(!currentAdmin())throw Object.assign(Error('관리자 권한이 변경되었습니다.'),{status:403});
+              db.prepare('DELETE FROM content_uploads WHERE token_hash=?').run(staged.token_hash);
+              db.prepare('INSERT INTO content_imports(user_id,filename,unit_id,counts,created_at) VALUES (?,?,?,?,?)').run(account.id,staged.filename,staged.unit_id,JSON.stringify(counts),Date.now());
+            }});
+            return json(res,200,{ok:true,counts,unit_id:staged.unit_id});
+          }catch(error){return json(res,error.status||409,{error:`저장하지 못했습니다. ${error.message} 다시 검증해 주세요.`});}
+        }
+        return json(res,404,{error:'관리자 요청을 찾을 수 없습니다.'});
+      }
       if(url.pathname==='/api/logout' && req.method==='POST') {
         const token=/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||'')?.[1];
         db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));

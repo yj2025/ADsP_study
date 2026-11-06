@@ -1,6 +1,6 @@
 const {DatabaseSync}=require('node:sqlite');
 const fs=require('node:fs'),path=require('node:path');
-const {setupContent,parseFile,importContent}=require('./content-store.cjs');
+const {setupContent,parseFile,importContent}=require('../src/content-store.cjs');
 function validationDatabase(database){
   const memory=new DatabaseSync(':memory:');
   setupContent(memory);
@@ -10,8 +10,14 @@ function validationDatabase(database){
     if(!existing.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='content_lessons'").get())return memory;
     existing.exec('BEGIN');
     memory.exec('DELETE FROM content_questions; DELETE FROM content_lessons;');
-    const lesson=memory.prepare('INSERT INTO content_lessons(position,id,title,body,body_format,source_url,license) VALUES (?,?,?,?,?,?,?)');
-    for(const l of existing.prepare('SELECT * FROM content_lessons ORDER BY position').all())lesson.run(l.position,l.id,l.title,l.body,l.body_format,l.source_url,l.license);
+    const hasCurriculum=existing.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='content_subjects'").get();
+    if(hasCurriculum){
+      memory.exec('DELETE FROM content_units; DELETE FROM content_subjects;');
+      for(const s of existing.prepare('SELECT * FROM content_subjects ORDER BY position').all())memory.prepare('INSERT INTO content_subjects(position,id,title) VALUES (?,?,?)').run(s.position,s.id,s.title);
+      for(const u of existing.prepare('SELECT * FROM content_units ORDER BY position').all())memory.prepare('INSERT INTO content_units(position,id,subject_id,title) VALUES (?,?,?,?)').run(u.position,u.id,u.subject_id,u.title);
+    }
+    const lesson=memory.prepare('INSERT INTO content_lessons(position,id,title,body,body_format,source_url,license,unit_id) VALUES (?,?,?,?,?,?,?,?)');
+    for(const l of existing.prepare('SELECT * FROM content_lessons ORDER BY position').all())lesson.run(l.position,l.id,l.title,l.body,l.body_format,l.source_url,l.license,l.unit_id??'data-information');
     const question=memory.prepare('INSERT INTO content_questions(position,id,lesson_id,text,options,answer,explanation,source_url,license) VALUES (?,?,?,?,?,?,?,?,?)');
     for(const q of existing.prepare('SELECT * FROM content_questions ORDER BY position').all())question.run(q.position,q.id,q.lesson_id,q.text,q.options,q.answer,q.explanation,q.source_url,q.license);
     existing.exec('COMMIT');
@@ -19,8 +25,8 @@ function validationDatabase(database){
   }catch(error){memory.close();throw error;}finally{existing.close();}
 }
 function run(args){
-  const filename=args.shift();let database=path.join(__dirname,'data','study.sqlite'),dryRun=false;
-  if(!filename||filename==='--help'){console.log('사용법: node import-content.cjs <file.json|file.csv> [--dry-run] [--database <SQLite 경로>]');return;}
+  const filename=args.shift();let database=path.join(__dirname,'..','data','study.sqlite'),dryRun=false;
+  if(!filename||filename==='--help'){console.log('사용법: node scripts/import-content.cjs <file.json|file.csv> [--dry-run] [--database <SQLite 경로>]');return;}
   while(args.length){const arg=args.shift();if(arg==='--dry-run')dryRun=true;else if(arg==='--database'&&args.length)database=path.resolve(args.shift());else throw Error(`알 수 없는 옵션: ${arg}`);}
   const bundle=parseFile(filename);
   // A dry run never creates or migrates the actual database.

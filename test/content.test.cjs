@@ -1,5 +1,5 @@
 const {DatabaseSync}=require('node:sqlite');
-const {setupContent,readContent,parseCSV,parseFile,importContent}=require('./content-store.cjs');
+const {setupContent,readContent,parseCSV,parseFile,importContent}=require('../src/content-store.cjs');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
@@ -34,7 +34,7 @@ assert.throws(()=>importContent(db,{lessons:[{id:'rollback-lesson',title:'a',bod
 const folder=fs.mkdtempSync(path.join(os.tmpdir(),'adsp-content-'));
 try{
 const database=path.join(folder,'study.sqlite');
-const cli=(...args)=>spawnSync(process.execPath,['import-content.cjs','content/example.json','--database',database,...args],{encoding:'utf8'});
+const cli=(...args)=>spawnSync(process.execPath,['scripts/import-content.cjs','content/example.json','--database',database,...args],{encoding:'utf8'});
 assert.equal(cli('--dry-run').status,0);assert.equal(fs.existsSync(database),false);
 assert.equal(cli().status,0);let stored=new DatabaseSync(database);assert.equal(stored.prepare('SELECT count(*) n FROM content_lessons').get().n,4);stored.close();
 assert.equal(cli('--dry-run').status,1);assert.equal(cli().status,1);

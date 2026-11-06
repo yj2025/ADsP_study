@@ -1,4 +1,4 @@
-const {createApp}=require('./server.cjs');
+const {createApp}=require('../src/server.cjs');
 const assert=require('node:assert/strict');
 const {DatabaseSync}=require('node:sqlite');
 const {mkdtempSync,rmSync}=require('node:fs');
@@ -14,7 +14,8 @@ async function request(route,{method='GET',data,cookie,origin=base,userId}={}){c
 const credentials={email:'student@example.test',password:'test-password-123'};
 try{
 const initial=await request('/api/content');assert.equal(initial.response.status,200);assert.equal(initial.body.lessons.length,3);assert.equal(initial.body.questions.length,6);
-const contentDB=new DatabaseSync(database);const {importContent}=require('./content-store.cjs');importContent(contentDB,JSON.parse(require('node:fs').readFileSync('content/example.json','utf8')));contentDB.close();
+assert.equal(initial.body.subjects.length,3);assert.equal(initial.body.units.length,4);assert.equal(initial.body.lessons[0].unit_id,'data-information');
+const contentDB=new DatabaseSync(database);const {importContent}=require('../src/content-store.cjs');importContent(contentDB,JSON.parse(require('node:fs').readFileSync('content/example.json','utf8')));contentDB.close();
 const expanded=await request('/api/content');assert.equal(expanded.body.lessons.length,4);assert.equal(expanded.body.questions[6].lesson_id,'data-quality');assert.equal(expanded.body.questions[6].lesson,3);
 assert.equal((await request('/api/progress')).response.status,401);
 assert.equal((await request('/api/register',{method:'POST',data:credentials,origin:'https://evil.test'})).response.status,403);
@@ -28,9 +29,13 @@ const b=await request('/api/register',{method:'POST',data:{...credentials,email:
 assert.equal((await request('/api/progress',{cookie:b.cookie})).body.progress,null);
 assert.equal((await request('/api/progress',{method:'PUT',cookie:b.cookie,data:record,userId:a.body.user.id})).response.status,409);
 assert.deepEqual((await request('/api/progress',{cookie:a.cookie})).body.progress,record);
+const scopedRecord={...record,selectedSubjectId:'analysis-planning',selectedUnitId:'planning-basics',positions:{'data-information':{lessonId:'l3',questionId:'q5'}}};
+assert.equal((await request('/api/progress',{method:'PUT',cookie:b.cookie,data:scopedRecord,userId:b.body.user.id})).response.status,200);
+assert.deepEqual((await request('/api/progress',{cookie:b.cookie})).body.progress,scopedRecord);
 const db=new DatabaseSync(database);const row=db.prepare('SELECT * FROM users WHERE email=?').get(credentials.email);assert.notEqual(row.password_hash,credentials.password);assert.equal(row.password_hash.length,128);db.close();
 await new Promise(resolve=>server.close(resolve));server=createApp({database});base=await listen();
 assert.equal((await request('/api/me',{cookie:a.cookie})).body.user.email,credentials.email);
+assert.deepEqual((await request('/api/progress',{cookie:b.cookie})).body.progress,scopedRecord);
 const login=await request('/api/login',{method:'POST',data:credentials,cookie:a.cookie});assert.equal(login.response.status,200);assert.notEqual(login.cookie,a.cookie);
 assert.equal((await request('/api/progress',{cookie:a.cookie})).response.status,401);
 assert.deepEqual((await request('/api/progress',{cookie:login.cookie})).body.progress,record);

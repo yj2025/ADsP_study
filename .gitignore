@@ -2,3 +2,6 @@ data/
 outputs/
 *.log
 .omc/
+.env
+.env.*
+!.env.example

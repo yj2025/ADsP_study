@@ -1,0 +1,25 @@
+{
+  "units": [
+    {"id":"analysis-approach","subject_id":"analysis-planning","title":"분석 접근 방식"}
+  ],
+  "lessons": [
+    {
+      "id":"approach-basics",
+      "unit_id":"analysis-approach",
+      "title":"목적에서 출발하는 분석",
+      "body":"데이터를 분석하기 전에 해결하려는 문제와 분석 목적을 명확히 합니다.\n\n예를 들어 고객 이탈을 줄이려면, 어떤 고객이 이탈할 가능성이 높은지 예측하는 문제와 이탈 원인을 설명하는 문제를 구분할 수 있습니다.",
+      "license":"자체 작성 예상 학습 콘텐츠"
+    }
+  ],
+  "questions": [
+    {
+      "id":"approach-q1",
+      "lesson_id":"approach-basics",
+      "text":"분석 과제를 시작할 때 우선 명확히 할 내용으로 가장 적절한 것은?",
+      "options":["해결하려는 문제와 분석 목적","보고서의 글꼴","차트의 배경색","파일 이름의 길이"],
+      "answer":0,
+      "explanation":"분석 목적과 해결하려는 문제를 먼저 명확히 해야 필요한 데이터와 분석 방법을 검토할 수 있습니다.",
+      "license":"자체 작성 예상 문제"
+    }
+  ]
+}
