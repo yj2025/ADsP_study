@@ -9,7 +9,7 @@
   function draw(){if(available())render();}
   async function api(url,data){
     const response=await fetch(url,data?{method:'POST',headers:{'Content-Type':'application/json','X-Study-User':String(admin()?.id)},body:JSON.stringify(data)}:{cache:'no-store'});
-    const payload=await response.json();if(!response.ok)throw Error(payload.error);return payload;
+    const payload=await response.json();if(response.status===401&&payload.code==='SESSION_EXPIRED')window.StudyAuth?.expire();if(!response.ok)throw Error(payload.error);return payload;
   }
   function card(item){
     const id=key(item),date=item.reviewed_at?new Date(item.reviewed_at).toLocaleString('ko-KR'):null;

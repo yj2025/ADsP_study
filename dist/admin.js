@@ -16,6 +16,7 @@
   async function request(url,data){
     const response=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Study-User':String(window.StudyAuth?.user?.id??'')},body:JSON.stringify(data)});
     const result=await response.json();
+    if(response.status===401&&result.code==='SESSION_EXPIRED')window.StudyAuth?.expire();
     if(!response.ok&&!result.errors)throw Error(result.error||'요청을 처리하지 못했습니다.');
     return result;
   }

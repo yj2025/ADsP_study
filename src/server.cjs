@@ -1,4 +1,5 @@
 const http = require('node:http');
+const https = require('node:https');
 const { DatabaseSync } = require('node:sqlite');
 const { randomBytes, scrypt, timingSafeEqual, createHash } = require('node:crypto');
 const { promisify } = require('node:util');
@@ -8,8 +9,10 @@ const derive = promisify(scrypt);
 const {setupContent,readContent,importContent}=require('./content-store.cjs');
 const {reviewList,publish}=require('./review-store.cjs');
 const {setupAdmin,prepareUpload,digest}=require('./admin-store.cjs');
+const {setupAccountMail,createMailer,issue,readToken,consume}=require('./account-mail.cjs');
 
-function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite'), secure = process.env.COOKIE_SECURE === '1', origin } = {}) {
+function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'study.sqlite'), tls, secure = Boolean(tls)||process.env.COOKIE_SECURE === '1', origin, sendMail } = {}) {
+  sendMail??=createMailer({database,origin,secure});
   if (database !== ':memory:') mkdirSync(path.dirname(database), { recursive: true });
   const db = new DatabaseSync(database);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
@@ -19,6 +22,7 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
   const limits = new Map();
   setupContent(db);
   setupAdmin(db);
+  setupAccountMail(db);
   const dummySalt = randomBytes(16).toString('hex');
   const hashToken = t => createHash('sha256').update(t).digest('hex');
   const cookie = (token, age) => `adsp_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? '; Secure' : ''}`;
@@ -29,10 +33,11 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
     const text=Buffer.concat(chunks).toString('utf8');
     try { return JSON.parse(text); } catch { throw Object.assign(Error('올바른 JSON 요청이 필요합니다.'), {status:400}); }
   }
+  const sessionTokenFor=req=>/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
   function user(req) {
-    const token = /(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
+    const token = sessionTokenFor(req);
     if (!token) return null;
-    return db.prepare('SELECT users.id, users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>?').get(hashToken(token), Date.now()) || null;
+    return db.prepare('SELECT users.id, users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>? AND users.verified_at IS NOT NULL').get(hashToken(token), Date.now()) || null;
   }
   function session(req, res, account) {
     const old = /(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
@@ -43,7 +48,8 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
     const publicAccount=db.prepare('SELECT id,email,role FROM users WHERE id=?').get(account.id);
     json(res, 200, {user:publicAccount}, {'Set-Cookie':cookie(token, 7*86400)});
   }
-  const server = http.createServer(async (req, res) => {
+  const protocol=tls?'https':'http';
+  const handler=async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
@@ -63,12 +69,15 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
       if (!['GET','POST','PUT'].includes(req.method)) return json(res,405,{error:'지원하지 않는 요청입니다.'});
       if(url.pathname==='/api/content' && req.method==='GET') return json(res,200,readContent(db));
       if (req.method !== 'GET') {
-        const allowed = origin || `http://127.0.0.1:${server.address().port}`;
-        const allowedLocal = !origin && req.headers.origin === `http://localhost:${server.address().port}`;
+        const allowed = origin || `${protocol}://127.0.0.1:${server.address().port}`;
+        const allowedLocal = !origin && req.headers.origin === `${protocol}://localhost:${server.address().port}`;
         if ((!allowedLocal && req.headers.origin !== allowed) || !req.headers['content-type']?.startsWith('application/json')) return json(res,403,{error:'허용되지 않은 요청입니다.'});
       }
-      if (url.pathname==='/api/me' && req.method==='GET') return json(res,200,{user:user(req)});
-      if (['/api/register','/api/login'].includes(url.pathname) && req.method==='POST') {
+      if (url.pathname==='/api/me' && req.method==='GET') {
+        const account=user(req),expired=!account&&Boolean(sessionTokenFor(req));
+        return json(res,200,{user:account,...(expired?{expired:true}:{})},expired?{'Set-Cookie':cookie('',0)}:{});
+      }
+      if (['/api/register','/api/login','/api/email/resend','/api/email/verify','/api/password/request','/api/password/reset'].includes(url.pathname) && req.method==='POST') {
         const address = req.socket.remoteAddress;
         const now = Date.now();
         for (const [key, entry] of limits) if (entry.until < now) limits.delete(key);
@@ -78,21 +87,54 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
         const data=await body(req);
         const email=typeof data?.email==='string'?data.email.trim().toLowerCase():'';
         const password=data?.password;
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length>254 || typeof password!=='string' || password.length<10 || password.length>128) return json(res,400,{error:'이메일과 10~128자 비밀번호를 입력해 주세요.'});
+        const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)&&email.length<=254;
+        const validPassword=typeof password==='string'&&password.length>=10&&password.length<=128;
+        const mailOrigin=origin||`${protocol}://127.0.0.1:${server.address().port}`;
+        if(['/api/email/resend','/api/password/request'].includes(url.pathname)){
+          if(!validEmail)return json(res,400,{error:'올바른 이메일을 입력해 주세요.'});
+          const kind=url.pathname==='/api/email/resend'?'verify':'reset';
+          const target=db.prepare('SELECT id,email,verified_at FROM users WHERE email=?').get(email);
+          // Give the same response regardless of account existence or delivery outcome.
+          if(target&&(kind==='reset'||!target.verified_at))issue(db,sendMail,target,kind,mailOrigin).catch(()=>console.error('계정 이메일 발송 실패'));
+          return json(res,202,{ok:true});
+        }
+        if(['/api/email/verify','/api/password/reset'].includes(url.pathname)){
+          if(!validPassword)return json(res,400,{error:'10~128자 비밀번호를 입력해 주세요.'});
+          const kind=url.pathname==='/api/email/verify'?'verify':'reset',target=readToken(db,data?.token,kind);
+          if(kind==='verify'){
+            const hashed=await derive(password,target.salt,64);
+            if(!timingSafeEqual(hashed,Buffer.from(target.password_hash,'hex')))return json(res,401,{error:'가입할 때 입력한 비밀번호가 일치하지 않습니다.'});
+            consume(db,data.token,kind,row=>db.prepare('UPDATE users SET verified_at=? WHERE id=?').run(Date.now(),row.id));
+          }else{
+            const salt=randomBytes(16).toString('hex'),hashed=await derive(password,salt,64);
+            consume(db,data.token,kind,row=>{
+              db.prepare('UPDATE users SET salt=?,password_hash=?,verified_at=COALESCE(verified_at,?) WHERE id=?').run(salt,hashed.toString('hex'),Date.now(),row.id);
+              db.prepare('DELETE FROM sessions WHERE user_id=?').run(row.id);
+              db.prepare('DELETE FROM account_tokens WHERE user_id=?').run(row.id);
+            });
+          }
+          return json(res,200,{ok:true});
+        }
+        if(!validEmail||!validPassword)return json(res,400,{error:'이메일과 10~128자 비밀번호를 입력해 주세요.'});
         const account=db.prepare('SELECT * FROM users WHERE email=?').get(email);
         if(url.pathname==='/api/register') {
           const salt=randomBytes(16).toString('hex');
           const hashed=await derive(password,salt,64);
           if(account) return json(res,409,{error:'이 이메일로 가입할 수 없습니다. 로그인 정보를 확인해 주세요.'});
-          try {const result=db.prepare('INSERT INTO users(email,salt,password_hash) VALUES (?,?,?)').run(email,salt,hashed.toString('hex')); return session(req,res,{id:Number(result.lastInsertRowid),email});}
+          try {const result=db.prepare('INSERT INTO users(email,salt,password_hash) VALUES (?,?,?)').run(email,salt,hashed.toString('hex'));
+            let delivery=true;try{await issue(db,sendMail,{id:Number(result.lastInsertRowid),email},'verify',mailOrigin);}catch{delivery=false;}
+            return json(res,202,{verificationRequired:true,delivery});}
           catch(error){if(error.code==='ERR_SQLITE_ERROR' && /UNIQUE/.test(error.message))return json(res,409,{error:'이 이메일로 가입할 수 없습니다.'});throw error;}
         }
         const hashed=await derive(password,account?.salt||dummySalt,64);
         if (!account || !timingSafeEqual(hashed,Buffer.from(account.password_hash,'hex'))) return json(res,401,{error:'이메일 또는 비밀번호가 일치하지 않습니다.'});
+        const current=db.prepare('SELECT verified_at,password_hash FROM users WHERE id=?').get(account.id);
+        if(current?.password_hash!==account.password_hash)return json(res,401,{error:'로그인 정보를 다시 확인해 주세요.'});
+        if(!current.verified_at)return json(res,403,{code:'EMAIL_UNVERIFIED',error:'이메일을 인증한 후 로그인해 주세요.'});
         return session(req,res,account);
       }
       const account=user(req);
-      if (!account) return json(res,401,{error:'로그인이 필요합니다.'});
+      if (!account) return json(res,401,{code:'SESSION_EXPIRED',error:'세션이 만료되었습니다. 다시 로그인해 주세요.'});
       if(url.pathname.startsWith('/api/admin/')){
         const currentAdmin=()=>user(req)?.role==='admin';
         if(!currentAdmin())return json(res,403,{error:'관리자만 콘텐츠를 관리할 수 있습니다.'});
@@ -141,15 +183,31 @@ function createApp({ database = path.join(__dirname, '..', 'data', 'study.sqlite
       if(url.pathname==='/api/progress' && req.method==='PUT') {
         if(req.headers['x-study-user']!==String(account.id)) return json(res,409,{error:'다른 탭에서 계정이 변경되었습니다. 새로고침 후 다시 학습해 주세요.'});
         const data=await body(req,1024*1024);
+        if(user(req)?.id!==account.id)return json(res,401,{code:'SESSION_EXPIRED',error:'세션이 만료되었습니다. 다시 로그인해 주세요.'});
         if (!data || data.version!==1 || !Array.isArray(data.completed) || !data.answers || typeof data.answers!=='object' || Array.isArray(data.answers)) return json(res,400,{error:'학습 기록 형식이 올바르지 않습니다.'});
         db.prepare('INSERT INTO progress VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload').run(account.id,JSON.stringify(data));
         return json(res,200,{ok:true});
       }
       return json(res,404,{error:'요청을 찾을 수 없습니다.'});
     } catch(error) { if(!res.headersSent)json(res,error.status||500,{error:error.status?error.message:'요청을 처리하지 못했습니다. 다시 시도해 주세요.'}); else res.end(); }
-  });
+  };
+  const server=tls?https.createServer(tls,handler):http.createServer(handler);
   server.on('close',()=>db.close());
   return server;
 }
-if(require.main===module){const port=Number(process.env.PORT)||4173;createApp({origin:process.env.APP_ORIGIN}).listen(port,'127.0.0.1',()=>console.log(`ADsP Study Room: http://127.0.0.1:${port}`));}
+if(require.main===module){
+  try{process.loadEnvFile(path.join(__dirname,'..','.env'));}catch(error){if(error.code!=='ENOENT')throw error;}
+  const localTls=process.argv.includes('--https-local');
+  const port=Number(process.env.PORT)||(localTls?4443:4173),host=localTls?'127.0.0.1':process.env.BIND_HOST||'127.0.0.1';
+  const tlsFolder=path.join(__dirname,'..','data','tls');
+  const cert=process.env.TLS_CERT_FILE||(localTls?path.join(tlsFolder,'local.crt'):null);
+  const key=process.env.TLS_KEY_FILE||(localTls?path.join(tlsFolder,'local.key'):null);
+  const origin=localTls?`https://127.0.0.1:${port}`:process.env.APP_ORIGIN;
+  if(localTls&&!process.env.MAIL_MODE)process.env.MAIL_MODE='local';
+  if(Boolean(cert)!==Boolean(key))throw Error('TLS_CERT_FILE과 TLS_KEY_FILE을 함께 지정하세요.');
+  const tls=cert?{cert:readFileSync(cert),key:readFileSync(key),minVersion:'TLSv1.2'}:undefined;
+  const app=createApp({tls,origin});
+  app.listen(port,host,()=>console.log(`ADsP Study Room: ${tls?'https':'http'}://${host}:${port}`));
+  for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>app.close());
+}
 module.exports={createApp};

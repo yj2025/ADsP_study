@@ -7,7 +7,8 @@ const {importContent}=require('../src/content-store.cjs');
 (async()=>{
 const folder=fs.mkdtempSync(path.join(os.tmpdir(),'adsp-admin-'));
 const database=path.join(folder,'test.sqlite');
-let server=createApp({database});
+const mail=[];const sendMail=async message=>{mail.push(message);};
+let server=createApp({database,sendMail});
 let base;
 async function start(){await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;}
 await start();
@@ -18,7 +19,7 @@ async function req(route,{method='POST',data={},user,origin=base}={}){
 const validate=(user,data)=>req('/api/admin/content/validate',{user,data});
 const commit=(user,token)=>req('/api/admin/content/import',{user,data:{validation_token:token}});
 const credentials=email=>({email,password:'test-password-123',role:'admin'});
-async function signup(email){const result=await req('/api/register',{data:credentials(email)});assert.equal(result.status,200);assert.equal(result.body.user.role,'member');return {id:result.body.user.id,cookie:result.cookie,email};}
+async function signup(email){const data=credentials(email);assert.equal((await req('/api/register',{data})).status,202);const token=new URL(mail.at(-1).link).hash.split('=')[1];assert.equal((await req('/api/email/verify',{data:{token,password:data.password}})).status,200);const result=await req('/api/login',{data});assert.equal(result.status,200);assert.equal(result.body.user.role,'member');return {id:result.body.user.id,cookie:result.cookie,email};}
 const command=(action,email)=>spawnSync(process.execPath,['scripts/manage-admin.cjs',action,email,'--database',database],{encoding:'utf8'});
 const jsonInput={filename:'example.json',content:fs.readFileSync('content/example.json','utf8'),subject_id:'analysis-planning',unit_id:'planning-basics'};
 const db=()=>new DatabaseSync(database);

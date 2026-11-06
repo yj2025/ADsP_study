@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ORIGIN: https://${SITE_HOST:?Set SITE_HOST to your public hostname}
+      COOKIE_SECURE: '1'
+      MAIL_MODE: ${MAIL_MODE:-disabled}
+      MAIL_WEBHOOK_URL: ${MAIL_WEBHOOK_URL:-}
+      MAIL_WEBHOOK_TOKEN: ${MAIL_WEBHOOK_TOKEN:-}
+    volumes:
+      - study_data:/data
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      SITE_HOST: ${SITE_HOST:?Set SITE_HOST to your public hostname}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  study_data:
+  caddy_data:
+  caddy_config:

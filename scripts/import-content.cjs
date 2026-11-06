@@ -25,7 +25,7 @@ function validationDatabase(database){
   }catch(error){memory.close();throw error;}finally{existing.close();}
 }
 function run(args){
-  const filename=args.shift();let database=path.join(__dirname,'..','data','study.sqlite'),dryRun=false;
+  const filename=args.shift();let database=process.env.DATABASE_PATH||path.join(__dirname,'..','data','study.sqlite'),dryRun=false;
   if(!filename||filename==='--help'){console.log('사용법: node scripts/import-content.cjs <file.json|file.csv> [--dry-run] [--database <SQLite 경로>]');return;}
   while(args.length){const arg=args.shift();if(arg==='--dry-run')dryRun=true;else if(arg==='--database'&&args.length)database=path.resolve(args.shift());else throw Error(`알 수 없는 옵션: ${arg}`);}
   const bundle=parseFile(filename);
