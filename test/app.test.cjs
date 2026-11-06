@@ -68,6 +68,8 @@ app=boot();app.run('location.hash="#exam";render()');assert.match(app.elements.m
 app.submit({id:'exam-setup',elements:{count:{value:'7'},minutes:{value:'1'}}});assert.equal(app.run('state.exam'),null);
 app.submit({id:'exam-setup',elements:{count:{value:'6'},minutes:{value:'1'}}});
 assert.equal(app.run('new Set(state.exam.ids).size'),6);assert.match(app.elements.main.innerHTML,/남은 시간/);
+assert.match(app.elements.main.innerHTML,/<button type="button"[^>]*data-action="exam-submit"/);
+assert.doesNotMatch(app.elements.main.innerHTML,/<button class="btn secondary" data-exam-index=/);
 assert.doesNotMatch(app.elements.main.innerHTML,/내 답:|정답:|해설을 표시/);
 app.run('state.exam.index=state.exam.ids.indexOf("q1")');app.click({examChoice:'2'});app.click({examChoice:'0'});
 assert.equal(app.run('state.exam.answers.q1'),0);assert.equal(app.run('state.mistakes.q1'),undefined);

@@ -25,5 +25,7 @@
 @media(max-height:420px){
   .auth-dialog:is([data-auth-mode=login],[data-auth-mode=register]){padding:10px 16px;min-height:0}
   .auth-dialog .auth-tabs{margin:6px 0}
-  .auth-dialog .auth-description{margin-bottom:4px}
+  .auth-dialog:is([data-auth-mode=login],[data-auth-mode=register]) .auth-description{display:none}
+  .auth-dialog:is([data-auth-mode=login],[data-auth-mode=register]) form{row-gap:4px}
+  .auth-dialog:is([data-auth-mode=login],[data-auth-mode=register]) input:not([type=checkbox]){padding-block:6px}
 }
