@@ -36,7 +36,7 @@ data=readContent(legacy);legacy.close();
 
 function boot(payload,stored=record,account=false){
   const handlers={},elements={},memory={'adsp-study-v1':JSON.stringify(stored)};
-  const c={console,location:{hash:'#home'},confirm:()=>true,localStorage:{getItem:k=>memory[k]??null,setItem:(k,v)=>memory[k]=v},document:{getElementById:id=>elements[id]??={innerHTML:'',textContent:'',addEventListener:(type,fn)=>handlers[id+type]=fn,focus:()=>{}},querySelectorAll:()=>[]},window:{addEventListener:()=>{},scrollTo:()=>{}}};
+  const c={console,location:{hash:'#home'},confirm:()=>true,localStorage:{getItem:k=>memory[k]??null,setItem:(k,v)=>memory[k]=v},document:{getElementById:id=>elements[id]??={innerHTML:'',textContent:'',addEventListener:(type,fn)=>handlers[id+type]=fn,focus:()=>{},querySelector:()=>null},querySelectorAll:()=>[]},window:{addEventListener:()=>{},scrollTo:()=>{}}};
   vm.createContext(c);vm.runInContext(fs.readFileSync('dist/app.js','utf8'),c);c.payload=payload;vm.runInContext('installContent(payload)',c);
   if(account){c.window.StudyAuth={user:{id:1},save:value=>c.saved=JSON.parse(JSON.stringify(value)),status:()=>{}};}
   return {run:s=>vm.runInContext(s,c),click:dataset=>handlers.mainclick({target:{closest:()=>({dataset,disabled:false})}}),reset:()=>handlers.resetclick(),memory,c,elements};

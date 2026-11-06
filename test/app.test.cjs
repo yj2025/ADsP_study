@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const source=fs.readFileSync('dist/app.js','utf8');
 const memory={};
-function boot(fail=false){const elements={};const handlers={};const c={console,Date,JSON,Number,Math,Set,Object,Array,location:{hash:'#home'},localStorage:{getItem:k=>memory[k]??null,setItem:(k,v)=>{if(fail)throw Error('quota');memory[k]=v;}},confirm:()=>true,document:{getElementById:id=>elements[id]??=( {innerHTML:'',textContent:'',addEventListener:(type,fn)=>handlers[id+type]=fn,focus:()=>{}}),querySelectorAll:()=>[]},window:{addEventListener:()=>{},scrollTo:()=>{}}};vm.createContext(c);vm.runInContext(source,c);c.seed=JSON.parse(fs.readFileSync('content/seed.json','utf8'));vm.runInContext('installContent(seed)',c);return {run:s=>vm.runInContext(s,c),click:dataset=>handlers.mainclick({target:{closest:()=>({dataset,disabled:false})}}),submit:target=>handlers.mainsubmit({target,preventDefault:()=>{}}),elements};}
+function boot(fail=false){const elements={};const handlers={};const c={console,Date,JSON,Number,Math,Set,Object,Array,location:{hash:'#home'},localStorage:{getItem:k=>memory[k]??null,setItem:(k,v)=>{if(fail)throw Error('quota');memory[k]=v;}},confirm:()=>true,document:{getElementById:id=>elements[id]??=( {innerHTML:'',textContent:'',addEventListener:(type,fn)=>handlers[id+type]=fn,focus:()=>{},querySelector:()=>null}),querySelectorAll:()=>[]},window:{addEventListener:()=>{},scrollTo:()=>{}}};vm.createContext(c);vm.runInContext(source,c);c.seed=JSON.parse(fs.readFileSync('content/seed.json','utf8'));vm.runInContext('installContent(seed)',c);return {run:s=>vm.runInContext(s,c),click:dataset=>handlers.mainclick({target:{closest:()=>({dataset,disabled:false})}}),submit:target=>handlers.mainsubmit({target,preventDefault:()=>{}}),elements};}
 let app=boot();
 assert.equal(app.run('progress()'),0);
 for(let i=0;i<3;i++)app.click({action:'complete'});
@@ -82,3 +82,21 @@ assert.equal(app.run('Object.keys(state.exam.answers).length'),0);assert.equal(a
 app.run(`installContent({subjects:[{id:'data-understanding',title:'데이터 이해'},{id:'analysis',title:'데이터 분석'}],units:[{id:'data-information',subject_id:'data-understanding',title:'데이터와 정보'},{id:'analysis-unit',subject_id:'analysis',title:'분석'}],lessons:[...seed.lessons,{id:'analysis-lesson',unit_id:'analysis-unit',title:'분석 개념',body:'설명'}],questions:[...seed.questions,{id:'analysis-q',lesson_id:'analysis-lesson',text:'분석 문제',options:['a','b','c','d'],answer:0,explanation:'설명'}]},null);startExam(2,1);state.exam.answers['analysis-q']=0;finishExam();render()`);
 assert.match(app.elements.main.innerHTML,/<tr><td>데이터 분석<\/td><td>1<\/td><td>1<\/td><td>0<\/td><td>0<\/td>/);
 console.log('PASS: exam setup, unique sampling, hidden solutions, saved answers, grading, timeout and mistake integration');
+
+(async()=>{
+  const app=boot();
+  app.run('state=fresh(); location.hash="#quiz"; startRound(2,false)');
+  let focused=false;
+  app.elements.main.querySelector=selector=>selector==='[data-choice][aria-pressed="true"]'?{focus:()=>{focused=true;}}:null;
+  app.click({choice:'1'});
+  assert.ok(focused,'focus returns to the selected answer after rendering');
+  app.run('subjects=[]; globalThis.fetch=async()=>{throw Error("offline");}');
+  assert.equal(await app.run('loadContent()'),false);
+  app.run('location.hash="#review"; render()');
+  assert.match(app.elements.main.innerHTML,/다시 시도/);
+  assert.doesNotMatch(app.elements.main.innerHTML,/npm start|127\.0\.0\.1/);
+  app.run('location.reload=()=>{location.retried=true;}');
+  app.click({action:'retry-content'});
+  assert.equal(app.run('location.retried'),true);
+  console.log('PASS: answer focus and content retry after navigation');
+})().catch(error=>{console.error(error);process.exitCode=1;});

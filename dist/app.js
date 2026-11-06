@@ -5,6 +5,7 @@ let subjects=[],units=[],lessons=[],questions=[];
 let storageOK=true,state=fresh();
 let selected=null,reviewId=null,reviewResult=null,quizSummary=false;
 let quizSetup=false;
+let contentLoadFailed=false;
 const main=document.getElementById('main');
 
 function fresh(){return {version:1,completed:[],lesson:0,answers:{},wrong:[],resolved:[],quizIndex:0,selectedSubjectId:DEFAULT_SUBJECT,selectedUnitId:DEFAULT_UNIT,positions:{},quizRounds:{},mistakes:{},exam:null};}
@@ -187,7 +188,12 @@ function review(){
 }
 function route(){const name=location.hash.slice(1);return ['learn','quiz','review','exam','admin'].includes(name)?name:'home';}
 function render(){
-  if(!subjects.length){main.innerHTML='<section class="panel" role="status">학습 콘텐츠를 불러오는 중입니다.</section>';return;}
+  if(!subjects.length){
+    main.innerHTML=contentLoadFailed
+      ?'<section class="panel"><h2>학습 콘텐츠를 불러오지 못했어요.</h2><p>인터넷 연결을 확인하고 다시 시도해 주세요.</p><button type="button" class="btn" data-action="retry-content">다시 시도</button></section>'
+      :'<section class="panel" role="status">학습 콘텐츠를 불러오는 중입니다.</section>';
+    return;
+  }
   const r=route();main.innerHTML=r==='admin'?(window.ContentAdmin?.render()??'<section class="panel" role="status">관리자 화면을 불러오는 중입니다.</section>'):(!storageOK?'<div class="notice">브라우저 저장소를 사용할 수 없어 기록이 현재 탭에서만 유지됩니다.</div>':'')+(r==='exam'?examPage():scopePicker()+({home,learn,quiz,review}[r])());
   document.getElementById('reset').hidden=r==='admin'||r==='exam';
   if(r==='admin'&&window.StudyAuth?.user?.role==='admin'&&window.ContentReview)main.insertAdjacentHTML('beforeend',window.ContentReview.render());
@@ -197,11 +203,17 @@ function render(){
   document.getElementById('curriculum-nav').innerHTML=subjects.map((s,i)=>`<button class="subject-button ${s.id===state.selectedSubjectId?'active':''}" data-subject="${s.id}" aria-pressed="${s.id===state.selectedSubjectId}"><span>${String(i+1).padStart(2,'0')}</span>${s.title}<small>${units.filter(u=>u.subject_id===s.id).length}개 단원</small></button>`).join('');
   updateSaveStatus();
 }
+function renderWithFocus(selector='.question h2'){
+  render();
+  const target=main.querySelector(selector);
+  if(target?.tagName==='H2')target.tabIndex=-1;
+  (target??main).focus();
+}
 function navigate(name){if(location.hash===`#${name}`)render();else location.hash=name;}
 main.addEventListener('change',e=>{if(e.target.id==='subject-select')chooseSubject(e.target.value);if(e.target.id==='unit-select')chooseUnit(e.target.value);});
 main.addEventListener('submit',e=>{
   if(route()==='exam'&&e.target.id==='exam-setup'){
-    e.preventDefault();if(startExam(Number(e.target.elements.count.value),Number(e.target.elements.minutes.value)))render();return;
+    e.preventDefault();if(startExam(Number(e.target.elements.count.value),Number(e.target.elements.minutes.value)))renderWithFocus();return;
   }
   if(route()==='review'&&e.target.dataset.memoId){
     e.preventDefault();const id=e.target.dataset.memoId;if(!reviewIds().includes(id))return;
@@ -210,16 +222,17 @@ main.addEventListener('submit',e=>{
   }
   if(route()!=='quiz'||e.target.id!=='quiz-setup')return;
   e.preventDefault();
-  if(startRound(Number(e.target.elements.count.value),e.target.elements.order.value==='random'))render();
+  if(startRound(Number(e.target.elements.count.value),e.target.elements.order.value==='random'))renderWithFocus();
 });
 document.getElementById('curriculum-nav').addEventListener('click',e=>{const b=e.target.closest('[data-subject]');if(b)chooseSubject(b.dataset.subject);});
 main.addEventListener('click',e=>{
-  if(route()==='admin')return;
   const b=e.target.closest('button');if(!b||b.disabled)return;
+  if(b.dataset.action==='retry-content'&&contentLoadFailed){location.reload();return;}
+  if(route()==='admin')return;
   if(route()==='exam'){
     if(b.type==='submit')return;
     const exam=state.exam;if(!exam)return;
-    if(!exam.submitted&&Date.now()>=exam.deadline){finishExam(true);render();return;}
+    if(!exam.submitted&&Date.now()>=exam.deadline){finishExam(true);renderWithFocus();return;}
     if(b.dataset.action==='exam-new'&&exam.submitted){state.exam=null;persist();}
     else if(b.dataset.action==='exam-submit'&&!exam.submitted){
       const blank=exam.ids.length-Object.keys(exam.answers).length;
@@ -234,7 +247,7 @@ main.addEventListener('click',e=>{
       const q=questions.find(q=>q.id===exam.ids[exam.index]),a=Number(b.dataset.examChoice);
       if(!q||!Number.isInteger(a)||a<0||a>=q.options.length)return;exam.answers[q.id]=a;persist();
     }else return;
-    render();return;
+    renderWithFocus(b.dataset.examChoice!==undefined?'[data-exam-choice][aria-pressed="true"]':undefined);return;
   }
   if(b.type==='submit'&&(b.form?.id==='quiz-setup'||b.form?.dataset.memoId))return;
   if(b.dataset.unit){chooseUnit(b.dataset.unit);return;}
@@ -273,7 +286,7 @@ main.addEventListener('click',e=>{
       case 'review-list':reviewId=null;reviewResult=null;selected=null;break;
     }
   }
-  render();
+  renderWithFocus(b.dataset.choice!==undefined?'[data-choice][aria-pressed="true"]':undefined);
 });
 window.addEventListener('hashchange',()=>{clearActivity();render();window.scrollTo(0,0);main.focus({preventScroll:true});});
 document.getElementById('reset').addEventListener('click',()=>{
@@ -296,7 +309,7 @@ function installContent(data,savedProgress){
 }
 async function loadContent(){
   try{const response=await fetch('/api/content',{cache:'no-store'});if(!response.ok)throw Error('콘텐츠를 불러올 수 없습니다.');installContent(await response.json());return true;}
-  catch{main.innerHTML='<section class="panel"><h2>학습 콘텐츠에 연결하지 못했습니다.</h2><p>프로젝트 폴더에서 npm start 실행 후 http://127.0.0.1:4173 으로 접속하고 새로고침해 주세요.</p></section>';return false;}
+  catch{contentLoadFailed=true;render();return false;}
 }
 render();
 if(typeof setInterval==='function')setInterval(tickExam,250);
