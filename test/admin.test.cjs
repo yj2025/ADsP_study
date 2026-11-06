@@ -46,7 +46,13 @@ assert.equal((await commit(other,preview.body.validation_token)).status,409);
 const stored=await commit(admin,preview.body.validation_token);assert.equal(stored.status,200);assert.deepEqual(counts(),[4,7,1]);assert.equal((await commit(admin,preview.body.validation_token)).status,409);
 assert.equal(stored.body.status,'draft');
 const readDrafts=user=>req('/api/admin/content/review?unit_id=planning-basics&status=draft',{method:'GET',user});
-const publish=(user,items,unit_id='planning-basics')=>req('/api/admin/content/publish',{user,data:{unit_id,items}});
+const list=(user,unit_id,status)=>req('/api/admin/content/review?'+new URLSearchParams({unit_id,status}),{method:'GET',user});
+const publish=async(user,items,unit_id='planning-basics')=>{
+  const latest=(await list(user,unit_id,'draft')).body.items??[];
+  return req('/api/admin/content/publish',{user,data:{unit_id,items:items.map(item=>({
+    ...item,version:item.version??latest.find(row=>row.type===item.type&&row.id===item.id)?.version
+  }))}});
+};
 const selected=[{type:'lesson',id:'data-quality'},{type:'question',id:'quality-q1'}];
 assert.equal((await readDrafts()).status,401);assert.equal((await readDrafts(member)).status,403);
 assert.equal((await publish(member,selected)).status,403);
@@ -58,7 +64,10 @@ assert.equal((await publish(admin,[selected[0],{type:'question',id:'missing'}]))
 assert.deepEqual((await publish(admin,selected)).body.counts,{lessons:1,questions:1});assert.equal((await publish(admin,selected)).status,409);
 const reviewed=await req('/api/admin/content/review?unit_id=planning-basics&status=published',{method:'GET',user:admin});assert.ok(reviewed.body.items.every(i=>i.reviewed_by===admin.id&&i.reviewed_at>0));
 const content=await req('/api/content',{method:'GET'});assert.equal(content.body.lessons.find(l=>l.id==='data-quality').unit_id,'planning-basics');assert.equal(content.body.questions.find(q=>q.id==='quality-q1').unit_id,'planning-basics');
-const revise=(user,action,changes,unit_id='planning-basics')=>req('/api/admin/content/question',{user,data:{unit_id,id:'quality-q1',action,changes}});
+const revise=async(user,action,changes,unit_id='planning-basics',version)=>{
+  const latest=(await list(user,unit_id,action==='withdraw'?'published':'draft')).body.items??[];
+  return req('/api/admin/content/question',{user,data:{unit_id,id:'quality-q1',action,changes,version:version??latest.find(row=>row.id==='quality-q1')?.version}});
+};
 const original=reviewed.body.items.find(item=>item.id==='quality-q1');
 const changes={text:'수정한 문제',options:original.options,answer:original.answer,explanation:'수정한 해설'};
 assert.equal((await revise(member,'withdraw')).status,403);
@@ -69,13 +78,32 @@ assert.equal((await revise(admin,'withdraw')).status,409);
 const withdrawn=await req('/api/content',{method:'GET'});
 assert.equal(withdrawn.body.questions.some(q=>q.id==='quality-q1'),false);
 assert.deepEqual(withdrawn.body.withdrawnQuestions,[{id:'quality-q1',unit_id:'planning-basics'}]);
+const oldQuestion=(await readDrafts(admin)).body.items.find(item=>item.id==='quality-q1');
 assert.equal((await revise(admin,'edit',{...changes,answer:4})).status,400);
 assert.equal((await revise(admin,'edit',changes)).status,200);
+assert.equal((await revise(second,'edit',{...changes,text:'오래된 수정'},'planning-basics',oldQuestion.version)).status,409);
+assert.equal((await publish(second,[oldQuestion])).status,409);
 assert.equal((await readDrafts(admin)).body.items.find(item=>item.id==='quality-q1').title,changes.text);
 assert.equal((await publish(admin,[selected[1]])).status,200);
 const corrected=(await req('/api/content',{method:'GET'})).body.questions.find(q=>q.id==='quality-q1');
 assert.equal(corrected.text,changes.text);
 assert.equal(corrected.explanation,changes.explanation);
+const publicLesson=reviewed.body.items.find(item=>item.id==='data-quality');
+const editLesson=(user,item,status,body)=>req('/api/admin/content/lesson',{user,data:{
+  unit_id:'planning-basics',id:item.id,version:item.version,status,title:item.title,body
+}});
+assert.equal((await editLesson(member,publicLesson,'published','수정안')).status,403);
+assert.equal((await editLesson(admin,publicLesson,'published','첫 수정안')).status,200);
+assert.equal((await editLesson(second,publicLesson,'published','이전 화면 수정')).status,409);
+assert.equal((await req('/api/content',{method:'GET'})).body.lessons.find(l=>l.id===publicLesson.id).body,
+  content.body.lessons.find(l=>l.id===publicLesson.id).body);
+const firstDraft=(await readDrafts(admin)).body.items.find(item=>item.id===publicLesson.id);
+assert.equal((await editLesson(second,firstDraft,'draft','최종 <수정안>')).status,200);
+assert.equal((await editLesson(admin,firstDraft,'draft','오래된 초안')).status,409);
+assert.equal((await publish(admin,[firstDraft])).status,409);
+assert.equal((await publish(admin,[{type:'lesson',id:publicLesson.id}])).status,200);
+assert.match((await req('/api/content',{method:'GET'})).body.lessons.find(l=>l.id===publicLesson.id).body,/최종 &lt;수정안&gt;/);
+assert.equal((await readDrafts(admin)).body.items.some(item=>item.id===publicLesson.id),false);
 assert.deepEqual((await req('/api/progress',{method:'GET',user:member})).body.progress,record);
 assert.equal((await validate(admin,jsonInput)).status,422);assert.deepEqual(counts(),[4,7,1]);
 const cross={questions:[{id:'cross-q',lesson_id:'l1',text:'a',options:['a','b','c','d'],answer:0,explanation:'a'}]};assert.equal((await validate(admin,{...jsonInput,content:JSON.stringify(cross)})).status,422);

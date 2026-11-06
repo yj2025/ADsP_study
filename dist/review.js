@@ -12,7 +12,14 @@
     const payload=await response.json();if(response.status===401&&payload.code==='SESSION_EXPIRED')window.StudyAuth?.expire();if(!response.ok)throw Error(payload.error);return payload;
   }
   function questionControls(item){
-    if(item.type!=='question')return '';
+    if(item.type==='lesson'){
+      if(status==='published'&&item.has_revision)return '<p class="muted">초안 목록에서 수정안을 검수할 수 있습니다.</p>';
+      return `<details><summary>개념 수정</summary><form data-edit-lesson="${esc(item.id)}">
+        <label>제목<input name="title" value="${esc(item.title)}" required maxlength="200"></label>
+        ${item.body_format==='html'?'<p class="muted">기존 서식 대신 사용할 전체 본문을 일반 텍스트로 입력하세요.</p>':''}
+        <label>본문<textarea name="body" required maxlength="50000">${item.body_format==='html'?'':esc(item.body)}</textarea></label>
+        <button type="submit" class="btn secondary" ${busy?'disabled':''}>개념 초안 저장</button></form></details>`;
+    }
     if(status==='published')return `<button type="button" class="btn secondary" data-review-action="withdraw" data-question-id="${esc(item.id)}" ${busy?'disabled':''}>공개 내리기</button>`;
     return `<details><summary>문제 수정</summary><form data-edit-question="${esc(item.id)}">
       <label>문제<textarea name="text" required maxlength="10000">${esc(item.title)}</textarea></label>
@@ -52,17 +59,21 @@
     }
   });
   main.addEventListener('submit',e=>{
-    const id=e.target.dataset.editQuestion;
+    const lesson=Boolean(e.target.dataset.editLesson);
+    const id=e.target.dataset.editLesson??e.target.dataset.editQuestion;
     if(!available()||!id)return;
     e.preventDefault();
-    if(busy||status!=='draft')return;
+    if(busy||(!lesson&&status!=='draft'))return;
     const fields=e.target.elements;
     const account=owner;
-    const changes={text:fields.text.value,options:Array.from({length:4},(_,i)=>fields['option'+i].value),
-      answer:Number(fields.answer.value),explanation:fields.explanation.value};
+    const version=items.find(item=>item.type===(lesson?'lesson':'question')&&item.id===id)?.version;
+    const body=lesson?{unit_id:unitId,id,status,version,title:fields.title.value,body:fields.body.value}:
+      {unit_id:unitId,id,action:'edit',version,changes:{text:fields.text.value,options:Array.from({length:4},(_,i)=>fields['option'+i].value),
+        answer:Number(fields.answer.value),explanation:fields.explanation.value}};
     run(async()=>{
-      await api('/api/admin/content/question',{unit_id:unitId,id,action:'edit',changes});
+      await api('/api/admin/content/'+(lesson?'lesson':'question'),body);
       if(account!==admin()?.id)return;
+      if(lesson)status='draft';
       await load();message='수정한 초안을 저장했습니다. 검수 후 다시 공개할 수 있습니다.';
     });
   });
@@ -72,10 +83,11 @@
     if(action==='load')run(load);
     if(action==='withdraw'&&status==='published'){
       const id=e.target.closest('[data-question-id]').dataset.questionId;
+      const version=items.find(item=>item.type==='question'&&item.id===id)?.version;
       if(!confirm('이 문제를 학습 화면에서 내리고 초안으로 되돌릴까요?'))return;
       const account=owner;
       run(async()=>{
-        await api('/api/admin/content/question',{unit_id:unitId,id,action:'withdraw'});
+        await api('/api/admin/content/question',{unit_id:unitId,id,action:'withdraw',version});
         if(account!==admin()?.id)return;
         await load();message='공개를 내렸습니다. 초안 목록에서 수정할 수 있습니다.';
         try{
@@ -87,7 +99,7 @@
       });
     }
     if(action==='publish'&&selection.size&&status==='draft'){
-      const picked=items.filter(item=>selection.has(key(item))).map(({type,id})=>({type,id}));
+      const picked=items.filter(item=>selection.has(key(item))).map(({type,id,version})=>({type,id,version}));
       if(!confirm(`선택한 ${picked.length}개 항목을 검수 완료로 표시하고 학습 화면에 공개할까요?`))return;
       const account=owner;
       run(async()=>{

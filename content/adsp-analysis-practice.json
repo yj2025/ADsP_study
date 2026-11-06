@@ -1,0 +1,210 @@
+{
+  "lessons": [
+    {
+      "id": "stats-residual-diagnostics",
+      "unit_id": "statistics-basics",
+      "title": "회귀 잔차와 모형 진단",
+      "body": "잔차는 관측값에서 예측값을 뺀 값이다. 잔차 그림의 곡선 패턴은 선형식이 구조를 놓쳤을 가능성을, 예측값이 커질수록 잔차 폭이 넓어지는 패턴은 등분산 가정이 맞지 않을 가능성을 보여 준다. 시간 순서의 연속적인 패턴은 오차의 독립성을 점검할 근거다. 잔차 그림 하나로 원인을 확정할 수는 없다.",
+      "source_url": "https://www.itl.nist.gov/div898/handbook/pri/section2/pri24.htm",
+      "license": "자체 작성 학습 자료"
+    },
+    {
+      "id": "mining-threshold-roc",
+      "unit_id": "data-mining",
+      "title": "분류 임계값과 ROC",
+      "body": "같은 분류 점수에 임계값을 낮추면 양성 예측 범위가 넓어져 참양성률과 거짓양성률이 감소하지 않는다. ROC 곡선의 가로축은 거짓양성률 FP/(FP+TN), 세로축은 참양성률 TP/(TP+FN)이다. AUC는 여러 임계값에 걸친 순위 구분 능력을 요약한다. 실제 운영 임계값은 오탐과 미탐의 비용을 함께 고려해 결정한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/model_evaluation.html",
+      "license": "자체 작성 학습 자료"
+    },
+    {
+      "id": "mining-pca-knn",
+      "unit_id": "data-mining",
+      "title": "주성분분석과 거리 기반 분류",
+      "body": "주성분분석(PCA)은 분산을 많이 설명하는 서로 직교하는 방향을 찾아 연속형 데이터를 낮은 차원으로 표현하는 비지도 방법이다. 척도가 다른 변수는 큰 단위가 결과를 좌우할 수 있어 표준화를 검토한다. K최근접이웃(KNN)은 가까운 훈련 관측치의 라벨로 분류한다. 표준화와 PCA의 기준은 검증 데이터를 보지 않고 학습 데이터에서 정한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/decomposition.html",
+      "license": "자체 작성 학습 자료"
+    }
+  ],
+  "questions": [
+    {
+      "id": "stats-residual-diagnostics-q1",
+      "lesson_id": "stats-residual-diagnostics",
+      "text": "실제값이 18이고 예측값이 21이다. 잔차와 모형의 오차 방향은?",
+      "options": [
+        "+3, 과소예측",
+        "−3, 과대예측",
+        "+3, 과대예측",
+        "−3, 과소예측"
+      ],
+      "answer": 1,
+      "explanation": "잔차는 18−21=−3이다. 예측값이 실제값보다 크므로 과대예측이다.",
+      "source_url": "https://www.itl.nist.gov/div898/handbook/pri/section2/pri24.htm",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "stats-residual-diagnostics-q2",
+      "lesson_id": "stats-residual-diagnostics",
+      "text": "예측값이 커질수록 잔차가 위아래로 더 넓게 퍼진다. 가장 직접적으로 점검할 가정은?",
+      "options": [
+        "설명변수의 정규성",
+        "종속변수의 단위",
+        "오차의 등분산성",
+        "모든 회귀계수가 0이라는 가설"
+      ],
+      "answer": 2,
+      "explanation": "부채꼴 모양은 조건부 오차 분산이 일정하지 않을 가능성을 시사한다.",
+      "source_url": "https://www.itl.nist.gov/div898/handbook/pri/section2/pri24.htm",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "stats-residual-diagnostics-q3",
+      "lesson_id": "stats-residual-diagnostics",
+      "text": "잔차 평균이 0에 가깝지만 잔차 그림에 U자 패턴이 있다. 적절한 판단은?",
+      "options": [
+        "평균이 0이므로 선형식이 충분하다",
+        "비선형 구조가 남았는지 확인한다",
+        "표본이 충분하면 U자 패턴은 무조건 사라진다",
+        "절편을 제거하면 항상 해결된다"
+      ],
+      "answer": 1,
+      "explanation": "양수와 음수가 상쇄돼 평균은 0일 수 있다. 잔차의 구조를 따로 확인해야 한다.",
+      "source_url": "https://www.itl.nist.gov/div898/handbook/pri/section2/pri24.htm",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "stats-residual-diagnostics-q4",
+      "lesson_id": "stats-residual-diagnostics",
+      "text": "시간순 잔차에서 양수와 음수가 각각 긴 구간으로 이어진다. 우선 점검할 항목은?",
+      "options": [
+        "오차의 자기상관",
+        "종속변수 표기 단위",
+        "설명변수 이름 중복",
+        "상관계수의 대칭성"
+      ],
+      "answer": 0,
+      "explanation": "인접 시점의 오차가 비슷한 부호로 이어지면 자기상관이나 누락된 시간 구조를 살펴볼 필요가 있다.",
+      "source_url": "https://www.itl.nist.gov/div898/handbook/pri/section2/pri24.htm",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-threshold-roc-q1",
+      "lesson_id": "mining-threshold-roc",
+      "text": "실제 양성 40건 중 30건을 맞혔고, 실제 음성 60건 중 12건을 양성으로 예측했다. ROC 좌표 (거짓양성률, 참양성률)는?",
+      "options": [
+        "(0.75, 0.20)",
+        "(0.12, 0.30)",
+        "(0.20, 0.75)",
+        "(0.30, 0.12)"
+      ],
+      "answer": 2,
+      "explanation": "거짓양성률은 12/60=0.20이고 참양성률은 30/40=0.75다.",
+      "source_url": "https://scikit-learn.org/stable/modules/model_evaluation.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-threshold-roc-q2",
+      "lesson_id": "mining-threshold-roc",
+      "text": "같은 점수 목록에서 양성 판정 임계값만 내릴 때 반드시 성립하는 것은?",
+      "options": [
+        "정밀도는 반드시 상승한다",
+        "거짓양성 건수는 증가하거나 그대로다",
+        "참양성 건수는 감소한다",
+        "AUC는 반드시 상승한다"
+      ],
+      "answer": 1,
+      "explanation": "양성 판정을 받는 집합이 넓어지므로 기존 거짓양성이 사라지지 않는다. 점수의 순위는 바뀌지 않는다.",
+      "source_url": "https://scikit-learn.org/stable/modules/model_evaluation.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-threshold-roc-q3",
+      "lesson_id": "mining-threshold-roc",
+      "text": "두 모델의 AUC가 같다. 여기서 결론 내릴 수 있는 것은?",
+      "options": [
+        "특정 임계값에서 정밀도가 항상 같다",
+        "두 ROC 곡선이 모든 점에서 같다",
+        "양성 예측 건수가 항상 같다",
+        "ROC 곡선 아래 면적은 같지만 운영 지점 성능은 다를 수 있다"
+      ],
+      "answer": 3,
+      "explanation": "같은 면적을 가진 ROC 곡선의 모양은 다를 수 있다. 운영 임계값의 성능을 별도로 확인한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/model_evaluation.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-threshold-roc-q4",
+      "lesson_id": "mining-threshold-roc",
+      "text": "미탐 비용이 크고 조사 가능한 경보 건수에 한도가 있다. 임계값을 고르는 방법은?",
+      "options": [
+        "검증 데이터에서 경보 한도를 충족하는 임계값 중 미탐과 오탐 비용을 비교한다",
+        "임계값을 0으로 고정한다",
+        "정확도만 보고 경보 한도는 무시한다",
+        "AUC 값 자체를 임계값으로 사용한다"
+      ],
+      "answer": 0,
+      "explanation": "임계값 선택에는 검증 성능뿐 아니라 처리량과 오류 비용 같은 운영 제약도 반영해야 한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/model_evaluation.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-pca-knn-q1",
+      "lesson_id": "mining-pca-knn",
+      "text": "PCA에서 첫째 주성분을 정하는 기준은?",
+      "options": [
+        "양성 라벨 수가 최대인 방향",
+        "투영된 자료의 분산이 최대인 방향",
+        "훈련 오분류율이 가장 낮은 방향",
+        "입력 변수 중 평균이 가장 작은 변수"
+      ],
+      "answer": 1,
+      "explanation": "일반적인 PCA는 라벨 없이 투영 분산을 최대화하는 첫 방향을 구한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/decomposition.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-pca-knn-q2",
+      "lesson_id": "mining-pca-knn",
+      "text": "첫 세 주성분의 분산 설명 비율이 0.55, 0.25, 0.12다. 누적 90% 이상을 처음 만족하는 개수는?",
+      "options": [
+        "1개",
+        "2개",
+        "3개",
+        "4개"
+      ],
+      "answer": 2,
+      "explanation": "두 성분은 80%, 세 성분은 92%를 설명한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/decomposition.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-pca-knn-q3",
+      "lesson_id": "mining-pca-knn",
+      "text": "K=5인 다수결 KNN에서 가장 가까운 다섯 이웃의 라벨이 A, B, B, A, B다. 거리 가중치를 쓰지 않으면 예측 라벨은?",
+      "options": [
+        "A",
+        "A와 B 동률",
+        "거리값 없이는 결정 불가",
+        "B"
+      ],
+      "answer": 3,
+      "explanation": "B가 3표, A가 2표다. 이웃이 주어졌고 가중치가 없으므로 거리의 크기는 추가로 필요하지 않다.",
+      "source_url": "https://scikit-learn.org/stable/modules/decomposition.html",
+      "license": "자체 제작 예상 문제"
+    },
+    {
+      "id": "mining-pca-knn-q4",
+      "lesson_id": "mining-pca-knn",
+      "text": "교차검증으로 표준화·PCA·KNN 조합을 평가할 때 적절한 방법은?",
+      "options": [
+        "각 폴드의 훈련 부분에서만 표준화와 PCA를 맞춘 뒤 검증 부분에 적용한다",
+        "전체 데이터에서 PCA를 먼저 맞추고 분할한다",
+        "검증 부분에서 별도로 주성분을 구해 훈련 결과와 비교한다",
+        "각 검증 폴드의 정답으로 표준화 기준을 맞춘다"
+      ],
+      "answer": 0,
+      "explanation": "검증 부분을 변환 기준 계산에 쓰면 정보가 훈련 과정으로 새어 나간다. 폴드마다 훈련 부분의 변환을 그대로 적용한다.",
+      "source_url": "https://scikit-learn.org/stable/modules/decomposition.html",
+      "license": "자체 제작 예상 문제"
+    }
+  ]
+}
