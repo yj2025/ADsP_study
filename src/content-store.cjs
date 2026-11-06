@@ -106,7 +106,7 @@ function parseFile(filename) {
     default:throw Error('.csv 또는 .json 파일만 지원합니다.');
   }
 }
-function validateBundle(db,bundle) {
+function validateBundle(db,bundle,{editingQuestion}={}) {
   if(!bundle||typeof bundle!=='object'||Array.isArray(bundle)||Object.keys(bundle).some(k=>!['subjects','units','lessons','questions'].includes(k)))throw Error('JSON 최상위는 subjects/units/lessons/questions 배열을 포함하는 객체여야 합니다.');
   const subjects=bundle.subjects??[],units=bundle.units??[],lessons=bundle.lessons??[],questions=bundle.questions??[];
   const groups=[subjects,units,lessons,questions];
@@ -114,6 +114,7 @@ function validateBundle(db,bundle) {
   if(groups.reduce((n,g)=>n+g.length,0)>1000)throw Error('한 번에 최대 1,000개를 가져올 수 있습니다.');
   const existingLessons=new Set(db.prepare('SELECT id FROM content_lessons').all().map(l=>l.id));
   const existingQuestions=new Set(db.prepare('SELECT id FROM content_questions').all().map(q=>q.id));
+  if(editingQuestion)existingQuestions.delete(editingQuestion);
   const string=(v,label,max)=>{if(typeof v!=='string'||!v.trim()||v.length>max)throw Error(`${label}: 비어 있지 않은 문자열(최대 ${max}자)이 필요합니다.`);return v;};
   const id=(v,label)=>{if(typeof v!=='string'||!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(v))throw Error(`${label}: 영문자로 시작하는 영문·숫자·밑줄·하이픈 ID(최대 64자)가 필요합니다.`);return v;};
   const existingSubjects=new Set(db.prepare('SELECT id FROM content_subjects').all().map(r=>r.id));
@@ -165,4 +166,4 @@ function importContent(db,bundle,{dryRun=false,afterInsert,reviewStatus='publish
     return {lessons:clean.lessons.length,questions:clean.questions.length,dryRun,...(clean.subjects.length?{subjects:clean.subjects.length}:{}),...(clean.units.length?{units:clean.units.length}:{})};
   } catch(error){db.exec('ROLLBACK');throw error;}
 }
-module.exports={setupContent,readContent,parseCSV,parseFile,importContent};
+module.exports={setupContent,readContent,parseCSV,parseFile,importContent,validateBundle};

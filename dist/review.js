@@ -11,9 +11,19 @@
     const response=await fetch(url,data?{method:'POST',headers:{'Content-Type':'application/json','X-Study-User':String(admin()?.id)},body:JSON.stringify(data)}:{cache:'no-store'});
     const payload=await response.json();if(response.status===401&&payload.code==='SESSION_EXPIRED')window.StudyAuth?.expire();if(!response.ok)throw Error(payload.error);return payload;
   }
+  function questionControls(item){
+    if(item.type!=='question')return '';
+    if(status==='published')return `<button type="button" class="btn secondary" data-review-action="withdraw" data-question-id="${esc(item.id)}" ${busy?'disabled':''}>공개 내리기</button>`;
+    return `<details><summary>문제 수정</summary><form data-edit-question="${esc(item.id)}">
+      <label>문제<textarea name="text" required maxlength="10000">${esc(item.title)}</textarea></label>
+      ${item.options.map((option,index)=>`<label>보기 ${index+1}<input name="option${index}" value="${esc(option)}" required maxlength="2000"></label>`).join('')}
+      <label>정답<select name="answer">${item.options.map((_,index)=>`<option value="${index}" ${index===item.answer?'selected':''}>${index+1}번</option>`).join('')}</select></label>
+      <label>해설<textarea name="explanation" required maxlength="20000">${esc(item.explanation)}</textarea></label>
+      <button type="submit" class="btn secondary" ${busy?'disabled':''}>초안 수정 저장</button></form></details>`;
+  }
   function card(item){
     const id=key(item),date=item.reviewed_at?new Date(item.reviewed_at).toLocaleString('ko-KR'):null;
-    return `<article class="review-entry"><div class="review-entry-title">${status==='draft'?`<label><input type="checkbox" data-review-pick="${esc(id)}" ${selection.has(id)?'checked':''} ${busy?'disabled':''}> <span>공개 선택</span></label>`:''}<span class="pill">${item.type==='lesson'?'개념':'문제'}</span><code>${esc(item.id)}</code></div><details><summary>${esc(item.title)}</summary>${item.type==='lesson'?`<p class="content-text">${esc(item.body)}</p>`:`<p class="muted">연결 개념: ${esc(item.lesson_title)} (${esc(item.lesson_id)})</p><ol>${item.options.map((o,i)=>`<li>${esc(o)}${i===item.answer?' <strong>✓ 정답</strong>':''}</li>`).join('')}</ol><p class="content-text"><strong>해설</strong><br>${esc(item.explanation)}</p>`}${item.source_url?`<p>출처: ${esc(item.source_url)}</p>`:''}${item.license?`<p>이용 조건: ${esc(item.license)}</p>`:''}</details>${status==='published'?`<small class="muted">${date?`공개 완료 · ${esc(date)}`:'기존 공개 콘텐츠'}</small>`:''}</article>`;
+    return `<article class="review-entry"><div class="review-entry-title">${status==='draft'?`<label><input type="checkbox" data-review-pick="${esc(id)}" ${selection.has(id)?'checked':''} ${busy?'disabled':''}> <span>공개 선택</span></label>`:''}<span class="pill">${item.type==='lesson'?'개념':'문제'}</span><code>${esc(item.id)}</code></div><details><summary>${esc(item.title)}</summary>${item.type==='lesson'?`<p class="content-text">${esc(item.body)}</p>`:`<p class="muted">연결 개념: ${esc(item.lesson_title)} (${esc(item.lesson_id)})</p><ol>${item.options.map((o,i)=>`<li>${esc(o)}${i===item.answer?' <strong>✓ 정답</strong>':''}</li>`).join('')}</ol><p class="content-text"><strong>해설</strong><br>${esc(item.explanation)}</p>`}${item.source_url?`<p>출처: ${esc(item.source_url)}</p>`:''}${item.license?`<p>이용 조건: ${esc(item.license)}</p>`:''}</details>${status==='published'?`<small class="muted">${date?`공개 완료 · ${esc(date)}`:'기존 공개 콘텐츠'}</small>`:''}${questionControls(item)}</article>`;
   }
   function panel(){
     if(owner!==admin()?.id||!selection)reset();
@@ -41,10 +51,41 @@
       document.getElementById('review-publish').disabled=!selection.size;
     }
   });
+  main.addEventListener('submit',e=>{
+    const id=e.target.dataset.editQuestion;
+    if(!available()||!id)return;
+    e.preventDefault();
+    if(busy||status!=='draft')return;
+    const fields=e.target.elements;
+    const account=owner;
+    const changes={text:fields.text.value,options:Array.from({length:4},(_,i)=>fields['option'+i].value),
+      answer:Number(fields.answer.value),explanation:fields.explanation.value};
+    run(async()=>{
+      await api('/api/admin/content/question',{unit_id:unitId,id,action:'edit',changes});
+      if(account!==admin()?.id)return;
+      await load();message='수정한 초안을 저장했습니다. 검수 후 다시 공개할 수 있습니다.';
+    });
+  });
   main.addEventListener('click',e=>{
     if(!available()||busy)return;
     const action=e.target.closest('[data-review-action]')?.dataset.reviewAction;
     if(action==='load')run(load);
+    if(action==='withdraw'&&status==='published'){
+      const id=e.target.closest('[data-question-id]').dataset.questionId;
+      if(!confirm('이 문제를 학습 화면에서 내리고 초안으로 되돌릴까요?'))return;
+      const account=owner;
+      run(async()=>{
+        await api('/api/admin/content/question',{unit_id:unitId,id,action:'withdraw'});
+        if(account!==admin()?.id)return;
+        await load();message='공개를 내렸습니다. 초안 목록에서 수정할 수 있습니다.';
+        try{
+          const response=await fetch('/api/content',{cache:'no-store'});
+          if(!response.ok)throw Error();
+          const content=await response.json();
+          if(account===admin()?.id)installContent(content,progressSnapshot());
+        }catch{error='공개는 내렸습니다. 학습 화면을 갱신하려면 새로고침해 주세요.';}
+      });
+    }
     if(action==='publish'&&selection.size&&status==='draft'){
       const picked=items.filter(item=>selection.has(key(item))).map(({type,id})=>({type,id}));
       if(!confirm(`선택한 ${picked.length}개 항목을 검수 완료로 표시하고 학습 화면에 공개할까요?`))return;

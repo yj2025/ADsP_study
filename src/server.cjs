@@ -9,7 +9,7 @@ const {isIP}=require('node:net');
 const {mergeProgress}=require('./progress-merge.cjs');
 const derive = promisify(scrypt);
 const {setupContent,readContent,importContent}=require('./content-store.cjs');
-const {reviewList,publish}=require('./review-store.cjs');
+const {reviewList,publish,reviseQuestion}=require('./review-store.cjs');
 const {setupAdmin,prepareUpload,digest}=require('./admin-store.cjs');
 const {setupAccountMail,createMailer,issue,readToken,consume}=require('./account-mail.cjs');
 
@@ -168,6 +168,7 @@ function createApp({ database = process.env.DATABASE_PATH || path.join(__dirname
         const sessionToken=/(?:^|;\s*)adsp_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||'')?.[1];
         if(url.pathname==='/api/admin/content/review'&&req.method==='GET')return json(res,200,reviewList(db,url.searchParams.get('unit_id'),url.searchParams.get('status')??'draft'));
         if(url.pathname==='/api/admin/content/publish'&&req.method==='POST')return json(res,200,{counts:publish(db,await body(req,128*1024),account.id,currentAdmin)});
+        if(url.pathname==='/api/admin/content/question'&&req.method==='POST')return json(res,200,reviseQuestion(db,await body(req,128*1024),currentAdmin));
         if(url.pathname==='/api/admin/content/validate'&&req.method==='POST'){
           const input=await body(req,12*1024*1024);
           if(!currentAdmin())return json(res,403,{error:'관리자 권한이 변경되었습니다.'});

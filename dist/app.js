@@ -26,6 +26,10 @@ function normalizeSelection(s){
 }
 function sanitize(value){
   const s=fresh();if(!value||value.version!==1)return normalizeSelection(s);
+  const visibleIds=new Set(questions.map(q=>q.id));
+  const hiddenEntries=entries=>Object.fromEntries(Object.entries(entries??{}).filter(([id])=>!visibleIds.has(id)));
+  s.hiddenQuestionRecords={answers:hiddenEntries(value.answers),mistakes:hiddenEntries(value.mistakes),
+    resolved:Array.isArray(value.resolved)?value.resolved.filter(id=>typeof id==='string'&&!visibleIds.has(id)):[]};
   s.completed=[...new Set((Array.isArray(value.completed)?value.completed:[]).filter(n=>Number.isInteger(n)&&n>=0&&n<lessons.length))];
   s.lesson=Number.isInteger(value.lesson)&&value.lesson>=0&&value.lesson<lessons.length?value.lesson:0;
   s.quizIndex=Number.isInteger(value.quizIndex)&&value.quizIndex>=0&&value.quizIndex<questions.length?value.quizIndex:0;
@@ -59,7 +63,13 @@ function sanitize(value){
   return normalizeSelection(s);
 }
 function rememberPosition(){if(state.selectedUnitId)state.positions[state.selectedUnitId]={lessonId:lessons[state.lesson]?.id,questionId:questions[state.quizIndex]?.id};}
-function progressSnapshot(){rememberPosition();return {...state,completedIds:state.completed.map(i=>lessons[i].id),lessonId:lessons[state.lesson]?.id,questionId:questions[state.quizIndex]?.id};}
+function progressSnapshot(){
+  rememberPosition();
+  const {hiddenQuestionRecords:hidden,...snapshot}=state;
+  return {...snapshot,answers:{...hidden?.answers,...state.answers},mistakes:{...hidden?.mistakes,...state.mistakes},
+    resolved:[...(hidden?.resolved??[]),...state.resolved],completedIds:state.completed.map(i=>lessons[i].id),
+    lessonId:lessons[state.lesson]?.id,questionId:questions[state.quizIndex]?.id};
+}
 function persist(){if(window.StudyAuth?.user){window.StudyAuth.save(progressSnapshot());return;}try{localStorage.setItem(KEY,JSON.stringify(progressSnapshot()));storageOK=true;}catch{storageOK=false;}updateSaveStatus();}
 function updateSaveStatus(){if(window.StudyAuth?.user){window.StudyAuth.status();return;}document.getElementById('save-status').textContent=storageOK?'● 게스트 · 이 브라우저에 저장':'저장 불가 · 현재 탭에서만 유지';}
 function clearActivity(){selected=null;reviewId=null;reviewResult=null;quizSummary=false;quizSetup=false;}

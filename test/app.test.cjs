@@ -100,3 +100,14 @@ console.log('PASS: exam setup, unique sampling, hidden solutions, saved answers,
   assert.equal(app.run('location.retried'),true);
   console.log('PASS: answer focus and content retry after navigation');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+app=boot();
+app.run('state=sanitize({version:1,answers:{q1:0},mistakes:{q1:{count:2,memo:"보존 메모"}},resolved:["q1"]});');
+app.run('const beforeWithdrawal=progressSnapshot(); installContent({...seed,questions:seed.questions.filter(q=>q.id!=="q1")},beforeWithdrawal);');
+assert.equal(app.run('state.answers.q1'),undefined);
+app.run('state.answers.q2=1; const duringWithdrawal=progressSnapshot(); installContent(seed,duringWithdrawal);');
+assert.equal(app.run('state.answers.q1'),0);
+assert.equal(app.run('state.answers.q2'),1);
+assert.equal(app.run('state.mistakes.q1.memo'),'보존 메모');
+assert.equal(app.run('state.resolved.includes("q1")'),true);
+console.log('PASS: withdrawn question records survive other saves and reappear after republication');
